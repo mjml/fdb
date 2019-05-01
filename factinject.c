@@ -8,12 +8,14 @@
 
 #include "findpid.h"
 
+void cleanup ();
+
 int main (int argc, char* argv[])
 {
 	int target_pid;
 	
   // Find the attachee process
-	target_pid = find_target_pid ("^factorio$");
+	target_pid = find_pid_by_pattern ("^factorio$");
 	if (!target_pid) {
 		fprintf(stderr, "Coudln't attach to target process. Exiting.\n");
 		fflush(stderr);
@@ -30,8 +32,14 @@ int main (int argc, char* argv[])
 
 	
 	
-
+	cleanup();
 	
 	return 0;
 	
+}
+
+
+void cleanup()
+{
+	ptrace(PTRACE_CONT,target_pid,0,18);
 }

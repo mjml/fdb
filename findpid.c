@@ -20,7 +20,7 @@ int pid_dir_filter (const struct dirent* de)
 	return 0;
 }
 
-int find_target_pid (const char* pat)
+int find_pid_by_pattern (const char* pat)
 {
 	if (!initialized) {
 		regcomp(&pid_regex, "[0-9]+", REG_EXTENDED);
