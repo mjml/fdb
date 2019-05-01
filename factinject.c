@@ -8,11 +8,12 @@
 
 #include "findpid.h"
 
+int target_pid;
+
 void cleanup ();
 
 int main (int argc, char* argv[])
 {
-	int target_pid;
 	
   // Find the attachee process
 	target_pid = find_pid_by_pattern ("^factorio$");
