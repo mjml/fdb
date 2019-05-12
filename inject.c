@@ -11,8 +11,8 @@
 
 int save_remote_registers (int pid, struct user* ur);
 int restore_remote_registers (int pid, struct user* ur);
-int grab_text (int pid, int size, uint8_t* buffer);
-int inject_text (int pid, int size, void* rip, const uint8_t* text);
+int grab_text (int pid, int size, void* remote, uint8_t* buffer);
+int inject_text (int pid, int size, void* remote, const uint8_t* text);
 
 int inject_and_run_text (int pid, int size, const uint8_t* text)
 {
@@ -24,15 +24,16 @@ int inject_and_run_text (int pid, int size, const uint8_t* text)
 		return 1;
 	}
 
+	void* rip = (void*)regset.regs.rip;
 	uint8_t* savebuf = (uint8_t*)alloca(size);
 	memset(savebuf, 0, size);
 
-	if (grab_text(pid, size, savebuf)) {
+	if (grab_text(pid, size, rip, savebuf)) {
 		return 2;
 	}
 
 	/* copy code into remote process at IP and run it */
-	if (inject_text(pid, size, (void*)regset.regs.rip, text)) {
+	if (inject_text(pid, size, rip, text)) {
 		return 3;
 	}
 	
@@ -73,32 +74,54 @@ int inject_and_run_text (int pid, int size, const uint8_t* text)
 
 int save_remote_registers (int pid, struct user* ur)
 {
-	/*
-	struct iovec;
-	if (ptrace(PTRACE_GETREGSET, pid, NT_foo, &iovec) == -1) {
+	if (ptrace(PTRACE_GETREGS, pid, 0, &ur->regs) == -1) {
 		return 1;
 	}
-	*/
+
+	if (ptrace(PTRACE_GETFPREGS, pid, 0, &ur->i387) == -1) {
+		return 2;
+	}
 	return 0;
 }
 
 int restore_remote_registers (int pid, struct user* ur)
 {
+	if (ptrace(PTRACE_SETREGS, pid, 0, &ur->regs) == -1) {
+		return 1;
+	}
+
+	if (ptrace(PTRACE_SETFPREGS, pid, 0, &ur->i387) == -1) {
+		return 2;
+	}
 	
 	return 0;
 }
 
-int grab_text (int pid, int size, uint8_t* buffer)
+int grab_text (int pid, int size, void* remote, uint8_t* buffer)
 {
+	assert (size % sizeof(long) == 0);
+
+	for (int i=0; i < size; i += sizeof(long)) {
+		if (ptrace(PTRACE_PEEKTEXT, pid, (void*)(remote+i), (void*)(buffer+i)) == -1) {
+			return 1;
+		}
+	}
 	
 	return 0;
 }
-
 
 int inject_text (int pid, int size, void* rip, const uint8_t* text)
 {
+	assert (size % sizeof(long) == 0);
+	
+	for (int i=0; i < size; i += sizeof(long)) {
+		if (ptrace(PTRACE_POKETEXT, pid, (void*)(rip + i), (void*)(text+i)) == -1) {
+			return 1;
+		}
+	}
 	
 	return 0;
+	
 }
 
 /**
@@ -121,7 +144,7 @@ int inject_text (int pid, int size, void* rip, const uint8_t* text)
    3. A software breakpoint is inserted at byte 18.
 
  */
-int make_dlopen (int pid, const char* shlib_path, int flags, uint8_t* buffer, int bufsiz)
+int make_dlopen (const char* shlib_path, uint8_t flags, uint8_t* buffer, int bufsiz)
 {
 	const int str_offset = 24;
 	assert(bufsiz >= 256);
@@ -129,8 +152,46 @@ int make_dlopen (int pid, const char* shlib_path, int flags, uint8_t* buffer, in
 
 	memset(buffer, 0, bufsiz);
 	memcpy(buffer, (uint8_t*) "\xbe\x02\x00\x00\x00\x48\x8d\x3d\x0d\x00\x00\x00\xe8\xbc\xfc\xff\xff", 18);
+	buffer[1] = flags;
 	strncpy((uint8_t*) buffer + str_offset, shlib_path, 256-str_offset-1);
+	
+	return 0;
+}
 
+int inject_dlopen (int pid, const char* shlib_path, uint8_t flags)
+{
+	const int bufsz = 512;
+	uint8_t buffer[512];
+	uint8_t saved[512];
+	struct user ur;
+	siginfo_t siginfo;
+		
+	make_dlopen(shlib_path, flags, buffer, bufsz);
+
+	if (ptrace(PTRACE_INTERRUPT, pid, 0, 0) == -1) {
+		return 1;
+	}
+	
+	save_remote_registers(pid, &ur);
+	void* rip = (void*)ur.regs.rip;
+
+	grab_text (pid, bufsz, rip, saved);
+	inject_text (pid, bufsz, rip, buffer);
+
+	if (ptrace(PTRACE_CONT, pid, 0, 0) == -1) {
+		return 2;
+	}
+
+	waitid(P_PID, pid, &siginfo, WSTOPPED);
+	
+	inject_text(pid, bufsz, rip, saved);
+	restore_remote_registers (pid, &ur);
+
+	if (ptrace(PTRACE_CONT, pid, 0, 0) == -1) {
+		return 3;
+	}
+	
+	return 0;
 }
 
 

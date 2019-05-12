@@ -30,7 +30,7 @@ int main (int argc, char* argv[])
 	
 	// Attach via ptrace
 	printf("Attaching to process %d. ", target_pid);
-	if (ptrace(PTRACE_ATTACH,target_pid,0,0) == -1) {
+	if (ptrace(PTRACE_SEIZE,target_pid,0,0) == -1) {
 		fprintf(stderr, "Error : %s\n", strerror(errno));
 		exit(1);
 	}
