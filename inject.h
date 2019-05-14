@@ -14,8 +14,11 @@
  *    Restore registers
  *    (Do not PTRACE_CONT the target process)
  */
-
 int inject_and_run_text (int pid, int size, const uint8_t* text);
+
+
+int inject_dlopen (int pid, const char* szsharedlib, uint8_t flags);
+
 
 
 #endif
