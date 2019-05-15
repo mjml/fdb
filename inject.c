@@ -108,9 +108,11 @@ int grab_text (int pid, int size, void* remote, uint8_t* buffer)
 	assert (size % sizeof(long) == 0);
 
 	for (int i=0; i < size; i += sizeof(long)) {
-		if (ptrace(PTRACE_PEEKTEXT, pid, (void*)(remote+i), (void*)(buffer+i)) == -1) {
+		long peeked = ptrace(PTRACE_PEEKTEXT, pid, (void*)(remote+i), NULL);
+		if (peeked == -1) {
 			return 1;
 		}
+		*(long*)(buffer+i) = peeked;
 	}
 	
 	return 0;
@@ -118,62 +120,55 @@ int grab_text (int pid, int size, void* remote, uint8_t* buffer)
 
 int inject_text (int pid, int size, void* rip, const uint8_t* text)
 {
+	// Note that 'text' is a pointer to codetext,
+	// but that what POKETEXT wants is an actual _value_ passed as its second parameter, but cast as a void*.
+	// So you have to convert the text pointer to a uint64_t pointer and dereference it to get the uint64_t,
+	//    then treat that as (void*).
+	
 	assert (size % sizeof(long) == 0);
 	
 	for (int i=0; i < size; i += sizeof(long)) {
-		if (ptrace(PTRACE_POKETEXT, pid, (void*)(rip + i), (void*)(text+i)) == -1) {
+		if (ptrace(PTRACE_POKETEXT, pid, (void*)(rip + i), (void*)*(uint64_t*)(text+i) ) == -1) {
 			return 1;
 		}
 	}
 	
 	return 0;
-	
 }
 
 /**
 	 Based on the following disassembled snippet from objdump:
-
-0000000000000eff <bootstrap_inject>:
-     eff:	55                   	push   %rbp
-     f00:	48 89 e5             	mov    %rsp,%rbp
--- start here --
-     f03:	be 02 00 00 00       	mov    $0x2,%esi
-     f08:	48 8d 3d e9 06 00 00 	lea    0x6e9(%rip),%rdi        # 15f8 <_IO_stdin_used+0xa8>
-     f0f:	e8 bc fc ff ff       	callq  bd0 <dlopen@plt>
--- end here --
-     f14:	90                   	nop
-     f15:	5d                   	pop    %rbp
-     f16:	c3                   	retq   
- 
+	 be 00 00 00 00       	       mov    $0x2,%esi
+	 48 8d 3d e9 06 00 00 	       lea    0x6e9(%rip),%rdi          # 15f8 <_IO_stdin_used+0xa8>
+	 48 a3 01 02 03 04 05 06 07 08 movabs %rax, 0x0807060504030201
+	 ff d0                         call   *%rax
+	 cc                            int    3
+	 
 	 1. The lea line is changed to "lea 0x13(%rip),%rdi"  in order to grab the injected text string
 	 2. The callq line is changed to accept the new address computed from the symbol table of dlopen and the memory map of the tracee
    3. A software breakpoint is inserted at byte 18.
 
  */
-int make_dlopen (const char* shlib_path, uint8_t flags, uint8_t* buffer, int bufsiz)
+int inject_dlopen (int pid, const char* shlib_path, uint32_t flags)
 {
-	const int str_offset = 24;
-	assert(bufsiz >= 256);
-	assert(strlen(shlib_path) < 256-str_offset-1);
-
-	memset(buffer, 0, bufsiz);
-	memcpy(buffer, (uint8_t*) "\xbe\x02\x00\x00\x00\x48\x8d\x3d\x0d\x00\x00\x00\xe8\xbc\xfc\xff\xff\x90\xcc", 19);
-	buffer[1] = flags;
-	strncpy((uint8_t*) buffer + str_offset, shlib_path, 256-str_offset-1);
-	
-	return 0;
-}
-
-int inject_dlopen (int pid, const char* shlib_path, uint8_t flags)
-{
+	const int str_offset = 32;
 	const int bufsz = 512;
-	uint8_t buffer[512];
-	uint8_t saved[512];
+	uint8_t buffer[bufsz];
+	uint8_t saved[bufsz];
 	struct user ur;
 	siginfo_t siginfo;
 	
 	// create the injected blob
-	make_dlopen(shlib_path, flags, buffer, bufsz);
+	memset(buffer, 0, bufsz);
+	memcpy(buffer, (uint8_t*)
+				 "\xbe\x02\x00\x00\x00"                      // mov    $0x2,%esi
+				 "\x48\x8d\x3d\x1b\x00\x00\x00"              // lea    0x1b(%rip),%rdi
+				 "\x48\xb8\x01\x02\x03\x04\x05\x06\x07\x08"  // mov    $0x0807060504030201, %rax
+				 "\xff\xd0"                                  // call   *%rax
+				 "\xcc"                                      // int    3
+				 , 25);
+	*(int32_t*)(buffer+1) = flags;
+	strncpy((uint8_t*) buffer + str_offset, shlib_path, 256-str_offset);
 	
 	// amend the blob with the sum of the segment address and symbol address of the target function
 	const int strsize = 512;
@@ -181,31 +176,56 @@ int inject_dlopen (int pid, const char* shlib_path, uint8_t flags)
 	char symbol[strsize];
 	uint64_t segaddr = find_segment_address_regex(pid, "/libdl", unitpath, strsize);
 	uint64_t symofs = find_symbol_address_regex(unitpath, "dlopen@@", symbol, strsize);
-	
+	uint8_t r;
+	*((uint64_t*)(buffer+14)) = segaddr + symofs;
+
+	printf("dlopen is located at 0x%lx\n", segaddr + symofs);
 	
 	// save remote registers and existing rip text
-	save_remote_registers(pid, &ur);
+	if (r = save_remote_registers(pid, &ur)) {
+		fprintf(stderr, "Problem saving remote registers: %d\n", r);
+		return 1;
+	}
 	void* rip = (void*)ur.regs.rip;
-	grab_text (pid, bufsz, rip, saved);
+	if (r = grab_text (pid, bufsz, rip, saved)) {
+		fprintf(stderr, "Problem grabbing text: %d\n", r);
+		return 2;
+	}
 	
-	/*
 	// inject the blob
+	printf("injecting...\n");
 	inject_text (pid, bufsz, rip, buffer);
 
 	// continue the tracee
 	if (ptrace(PTRACE_CONT, pid, 0, 0) == -1) {
+		fprintf(stderr,"Couldn't continue the tracee.\n");
 		return 2;
 	}
 
 	// wait for the tracee to stop
+	printf("waiting for completion...\n");
 	waitid(P_PID, pid, &siginfo, WSTOPPED);
-	*/
+	
+	// check the return code
+	struct user ur2;
+	if (r = save_remote_registers(pid, &ur2)) {
+		fprintf(stderr, "Problem saving remote registers: %d\n", r);
+		return 6;
+	}
 
+	printf("rax value: 0x%lx\n", ur2.regs.rax);
+	printf("rip difference: 0x%lx - %lx = %lu\n", ur2.regs.rip, ur.regs.rip, ur2.regs.rip - ur.regs.rip);
+	
 	// restore tracee rip text and registers
-	/*
-	inject_text(pid, bufsz, rip, saved);
-	restore_remote_registers (pid, &ur);
-	*/
+	if (r = inject_text(pid, bufsz, rip, saved)) {
+		fprintf(stderr, "Problem injecting saved codetext: %d\n", r);
+		return 4;
+	}
+
+	if (r =	restore_remote_registers (pid, &ur)) {
+		fprintf(stderr, "Problem restoring saved registers: %d\n", r);
+		return 5;
+	}
 
 	return 0;
 }
@@ -323,18 +343,20 @@ static uint64_t find_symbol_address_regex (const char* unitpath, const char* sym
 	}
 	
 	snprintf(readelf_cmd, strsize, "readelf -s %s", unitpath);
-	printf("# %s\n", readelf_cmd);
+	//printf("# %s\n", readelf_cmd);
 	fhre = popen(readelf_cmd, "r");
 	do {
 		uint64_t sofs;
 		char symname[strsize];
 		r = fgets(line, strsize, fhre);
 		n = sscanf(line, "%*d: %lx %*d %*s %*s %*s %*s %s", &sofs, symname);
+		/*
 		if (n==2) {
 			printf("#%s", line);
 		} else {
 			printf(line);
 		} 
+		*/
 		if (!regexec(&re_symbol,symname,(size_t)0,NULL,0)) {
 			strncpy(sname, symname, nsname);
 			symbol_offset = sofs;

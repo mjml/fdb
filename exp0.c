@@ -9,7 +9,7 @@ int main (int argc, char* argv[])
 {
 	printf("Trying to open factinject as a shared library. Does its main() get run?\n");
 	
-	void* hlib = dlopen("./factinject", RTLD_NOW|RTLD_GLOBAL);
+	void* hlib = dlopen("./factinject", RTLD_NOW);
 	if (!hlib) {
 		fprintf(stderr, "%s\n", dlerror());
 		exit(1);

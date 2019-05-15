@@ -53,22 +53,18 @@ int main (int argc, char* argv[])
 	waitid(P_PID, target_pid, &siginfo, WSTOPPED);
 	printf("It is stopped.\n", target_pid);
 
-	sleep(1);
-	
 	// Inject self
-	printf("Inject current executable into tracee: ");
-  inject_dlopen(target_pid, "/home/joya/localdev/factinject/factinject", RTLD_NOW);
+	printf("Inject current executable into tracee.\n");
+  inject_dlopen(target_pid, "/home/joya/localdev/factinject/factinject", RTLD_NOW | RTLD_GLOBAL);
+	//inject_dlopen(target_pid, "libunwind.so", RTLD_NOW | RTLD_GLOBAL);
+	
 	printf("Done.\n");
-
+		
 	// Continue tracee
 	if (ptrace(PTRACE_CONT,target_pid,0,0) == -1) {
 		fprintf(stderr, "Error : %s\n", strerror(errno));
 		exit(3);
 	}
-	
-	printf("Waiting for ctrl-C...\n");
-	
-	while (1) {}
 	
 	// All done.
 	cleanup();
@@ -85,10 +81,11 @@ void test_func ()
 
 void cleanup()
 {
-	ptrace(PTRACE_CONT,target_pid,0,18);
 }
+
+char factinjectpath[] = "/home/joya/localdev/factinject/factinject";
 
 void bootstrap_inject ()
 {
-	dlopen("/home/joya/localdev/factinject/factinject", RTLD_NOW);
+	dlopen(factinjectpath, RTLD_NOW);
 }

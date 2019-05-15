@@ -17,7 +17,7 @@
 int inject_and_run_text (int pid, int size, const uint8_t* text);
 
 
-int inject_dlopen (int pid, const char* szsharedlib, uint8_t flags);
+int inject_dlopen (int pid, const char* szsharedlib, uint32_t flags);
 
 
 
