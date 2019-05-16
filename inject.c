@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <limits.h>
 #include <errno.h>
 #include <alloca.h>
 #include <inttypes.h>
@@ -12,13 +13,13 @@
 
 #include "inject.h"
 
-int save_remote_registers (int pid, struct user* ur);
-int restore_remote_registers (int pid, struct user* ur);
 int grab_text (int pid, int size, void* remote, uint8_t* buffer);
 int inject_text (int pid, int size, void* remote, const uint8_t* text);
 
-static uint64_t find_segment_address_regex (int pid, const char* unitpath_regex, char* oname, int noname);
-static uint64_t find_symbol_address_regex (const char* unitpath, const char* symbol_regex, char* sname, int nsname);
+static long find_segment_address_regex (int pid, const char* unitpath_regex, char* oname, int noname,
+																			 unsigned long* paddr, unsigned long* paddr2, unsigned long* poffset);
+static long find_symbol_offset_regex (const char* unitpath, const char* symbol_regex, char* sname, int nsname,
+																		 unsigned long* poffset);
 
 int inject_and_run_text (int pid, int size, const uint8_t* text)
 {
@@ -149,14 +150,27 @@ int inject_text (int pid, int size, void* rip, const uint8_t* text)
    3. A software breakpoint is inserted at byte 18.
 
  */
-int inject_dlopen (int pid, const char* shlib_path, uint32_t flags)
+void* inject_dlopen (int pid, const char* shlib_path, uint32_t flags)
 {
-	const int str_offset = 32;
+	const int arg2_offset = 1;
+	const int arg1_offset = 32;
+	const int funcaddr_offset = 15;
 	const int bufsz = 512;
 	uint8_t buffer[bufsz];
 	uint8_t saved[bufsz];
+	const int strsize = 512;
+	char unitpath[strsize];
+	char symbol[strsize];
 	struct user ur;
 	siginfo_t siginfo;
+	void *rip, *rip2;
+	void *rbp;
+	unsigned long segaddr, segaddr2;
+	unsigned long segoffset;
+	unsigned long symofs;
+	uint8_t r;
+	unsigned long factsegaddr, factsegaddr2;
+	unsigned long factsegsize;
 	
 	// create the injected blob
 	memset(buffer, 0, bufsz);
@@ -167,146 +181,157 @@ int inject_dlopen (int pid, const char* shlib_path, uint32_t flags)
 				 "\xff\xd0"                                  // call   *%rax
 				 "\xcc"                                      // int    3
 				 , 25);
-	*(int32_t*)(buffer+1) = flags;
-	strncpy((uint8_t*) buffer + str_offset, shlib_path, 256-str_offset);
+	strncpy((uint8_t*) buffer + arg1_offset, shlib_path, bufsz-arg1_offset);
+	*(int32_t*)(buffer+arg2_offset) = flags;
 	
 	// amend the blob with the sum of the segment address and symbol address of the target function
-	const int strsize = 512;
-	char unitpath[strsize];
-	char symbol[strsize];
-	uint64_t segaddr = find_segment_address_regex(pid, "/libdl", unitpath, strsize);
-	uint64_t symofs = find_symbol_address_regex(unitpath, "dlopen@@", symbol, strsize);
-	uint8_t r;
-	*((uint64_t*)(buffer+14)) = segaddr + symofs;
-
-	printf("dlopen is located at 0x%lx\n", segaddr + symofs);
+	find_segment_address_regex(pid, "/libdl", unitpath, strsize, &segaddr, &segaddr2, &segoffset);
+  find_symbol_offset_regex(unitpath, "dlopen@@", symbol, strsize, &symofs);
+	*((uint64_t*)(buffer+funcaddr_offset)) = segaddr + symofs;
+	printf("dlopen is located at 0x%lx\n", segaddr + segoffset + symofs);
 	
 	// save remote registers and existing rip text
 	if (r = save_remote_registers(pid, &ur)) {
 		fprintf(stderr, "Problem saving remote registers: %d\n", r);
-		return 1;
+		return (void*)1;
 	}
-	void* rip = (void*)ur.regs.rip;
+	rip = (void*)ur.regs.rip;
 	if (r = grab_text (pid, bufsz, rip, saved)) {
 		fprintf(stderr, "Problem grabbing text: %d\n", r);
-		return 2;
+		return (void*)2;
 	}
-	
-	// inject the blob
-	printf("injecting...\n");
-	inject_text (pid, bufsz, rip, buffer);
 
+	// inject the blob
+	printf("Injecting codetext...\n");
+	inject_text (pid, bufsz, rip, buffer);
+	
 	// continue the tracee
 	if (ptrace(PTRACE_CONT, pid, 0, 0) == -1) {
 		fprintf(stderr,"Couldn't continue the tracee.\n");
-		return 2;
+		return (void*)3;
 	}
 
 	// wait for the tracee to stop
-	printf("waiting for completion...\n");
+	printf("Waiting for completion...\n");
 	waitid(P_PID, pid, &siginfo, WSTOPPED);
 	
 	// check the return code
 	struct user ur2;
 	if (r = save_remote_registers(pid, &ur2)) {
 		fprintf(stderr, "Problem saving remote registers: %d\n", r);
-		return 6;
+		return (void*)4;
 	}
 
 	printf("rax value: 0x%lx\n", ur2.regs.rax);
 	printf("rip difference: 0x%lx - %lx = %lu\n", ur2.regs.rip, ur.regs.rip, ur2.regs.rip - ur.regs.rip);
 	
 	// restore tracee rip text and registers
+	printf("Restoring previous codetext\n");
 	if (r = inject_text(pid, bufsz, rip, saved)) {
 		fprintf(stderr, "Problem injecting saved codetext: %d\n", r);
-		return 4;
+		return (void*)5;
 	}
 
+	printf("Restoring previous registers\n");
 	if (r =	restore_remote_registers (pid, &ur)) {
 		fprintf(stderr, "Problem restoring saved registers: %d\n", r);
-		return 5;
+		return (void*)6;
 	}
 
-	return 0;
+	return (void*)ur2.regs.rax;
 }
 
 
-/**
- * For very simple functions (with no parameters or calls), create stub code that contains 
- * the function without the prologue. 
- */
-int func_to_stub (void (*func)(), uint8_t* buffer, size_t bufsiz)
+void* inject_dlsym (int pid, const char* szsym)
 {
-	uint8_t* funcdata = (uint8_t*) func;
-
-	// check that the function has the standard prologue
-	uint32_t prologue = 0xe5894855;
-	uint32_t* pi32_funcdata = (uint32_t*)funcdata;
-	if (prologue != *pi32_funcdata) {
-		// doesn't have usual call semantics
-		return 1;
+	const int bufsz = 512;
+	uint8_t buffer[bufsz];
+	uint8_t saved[bufsz];
+	struct user ur;
+	int r;
+	void *rip;
+	
+	// save remote registers and existing rip text
+	if (r = save_remote_registers(pid, &ur)) {
+		fprintf(stderr, "Problem saving remote registers: %d\n", r);
+		return (void*)1;
 	}
-	
-	// skip past prologue, copy bytes until return
-	funcdata += 4;
-	
-	uint16_t* pi16_funcdata;
-	int i;
-	for (i=0; i < bufsiz; i++) {
-		pi16_funcdata = (uint16_t*)funcdata;
-		if (*pi16_funcdata == 0xc35d) {
-			buffer[i] = 0xcc; // write in an INT 3 to break the program after the stub
-			break;
-		} else {
-			buffer[i] = *funcdata; // otherwise write function data
-			funcdata++;
-		}
-	}
-	
-	// if we didn't have enough space to contain the function in the stub buffer, return an error.
-	if (*funcdata != 0xc3 && i == bufsiz) {
-		return 2;
+	rip = (void*)ur.regs.rip;
+	if (r = grab_text (pid, bufsz, rip, saved)) {
+		fprintf(stderr, "Problem grabbing text: %d\n", r);
+		return (void*)2;
 	}
 
-	return 0;
+
+	// check the return code
+	struct user ur2;
+	if (r = save_remote_registers(pid, &ur2)) {
+		fprintf(stderr, "Problem saving remote registers: %d\n", r);
+		return (void*)4;
+	}
+
+	printf("rax value: 0x%lx\n", ur2.regs.rax);
+	printf("rip difference: 0x%lx - %lx = %lu\n", ur2.regs.rip, ur.regs.rip, ur2.regs.rip - ur.regs.rip);
+	
+	// restore tracee rip text and registers
+	printf("Restoring previous codetext\n");
+	if (r = inject_text(pid, bufsz, rip, saved)) {
+		fprintf(stderr, "Problem injecting saved codetext: %d\n", r);
+		return (void*)5;
+	}
+
+	printf("Restoring previous registers\n");
+	if (r =	restore_remote_registers (pid, &ur)) {
+		fprintf(stderr, "Problem restoring saved registers: %d\n", r);
+		return (void*)6;
+	}
+
+	return (void*)ur2.regs.rax;
+	
 }
+
+
+
 
 
 /**
  * Returns the execution unit's address, or 0 for not found or UINT64_MAX for error.
  */
-uint64_t find_segment_address_regex (int pid, const char* unitpath_regex, char* oname, int noname)
+long find_segment_address_regex (int pid, const char* unitpath_regex, char* oname, int noname,
+																 unsigned long* paddr, unsigned long* paddr2, unsigned long* poffset)
 {
 	const int strsize = 512;
 	char path[strsize];
-	uint64_t segment_address = 0;
 
 	regex_t re;
 	if (regcomp(&re, unitpath_regex, REG_EXTENDED)) {
-		return UINT64_MAX;
+		return 1;
 	}
 
 	snprintf(path, strsize, "/proc/%d/maps", pid);
 	FILE* fmap = fopen(path, "r");
 	if (fmap == NULL) {
-		return UINT64_MAX;
+		return 2;
 	}
 
 	char* r;
 	
 	do {
-		unsigned long saddr;
+		unsigned long saddr, saddr2;
+		unsigned long offs;
 		char privs[6];
 		char objname[strsize];
 		char line[strsize];
 		int n=0;
 		objname[0] = 0;
 		r = fgets(line, strsize, fmap);
-		n = sscanf(line, "%lx - %*x %4s %*x %*x:%*x %*d %s\n", &saddr, privs, objname);
+		n = sscanf(line, "%lx - %lx %4s %lx %*x:%*x %*d %s\n", &saddr, &saddr2, privs, &offs, objname);
 		if (n == 2) continue;
 		if (!regexec(&re,objname,(size_t)0,NULL,0) && strchr(privs, 'x')) {
-			segment_address = saddr;
-			printf("Found segment at 0x%lx.\n", segment_address);
+			*paddr = saddr;
+			if (paddr2) *paddr2 = saddr2;
+			if (poffset) *poffset = offs;
+			printf("Found segment %s at 0x%lx.\n", objname, *paddr);
 			strncpy(oname, objname, noname);
 			break;
 		}
@@ -319,7 +344,7 @@ uint64_t find_segment_address_regex (int pid, const char* unitpath_regex, char* 
 	fclose(fmap);
 	regfree(&re);
 	
-	return segment_address;
+	return 0;
 	
 }
 
@@ -327,7 +352,8 @@ uint64_t find_segment_address_regex (int pid, const char* unitpath_regex, char* 
 /**
  * 
  */
-static uint64_t find_symbol_address_regex (const char* unitpath, const char* symbol_regex, char* sname, int nsname)
+static long find_symbol_offset_regex (const char* unitpath, const char* symbol_regex, char* sname, int nsname,
+																			unsigned long* poffset)
 {
 	const int strsize = 512;
 	char readelf_cmd[strsize];
@@ -336,10 +362,9 @@ static uint64_t find_symbol_address_regex (const char* unitpath, const char* sym
 	FILE* fhre;
 	int n;
 	char* r;
-	uint64_t symbol_offset;
 	
 	if (regcomp(&re_symbol, symbol_regex, REG_EXTENDED)) {
-		return UINT64_MAX;
+		return 1;
 	}
 	
 	snprintf(readelf_cmd, strsize, "readelf -s %s", unitpath);
@@ -359,14 +384,14 @@ static uint64_t find_symbol_address_regex (const char* unitpath, const char* sym
 		*/
 		if (!regexec(&re_symbol,symname,(size_t)0,NULL,0)) {
 			strncpy(sname, symname, nsname);
-			symbol_offset = sofs;
-			printf("Found symbol offset at 0x%lx.\n", symbol_offset);
+			*poffset = sofs;
+			printf("Found symbol %s offset at 0x%lx.\n", symname, *poffset);
 			break;
 		}
 	} while (r != NULL);
 	
 	pclose(fhre);
 	regfree(&re_symbol);
-	return symbol_offset;
+	return 0;
 	
 }

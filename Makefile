@@ -8,7 +8,7 @@ default: factinject exp0
 clean:
 	$(RM) -rf *.o factinject test? exp?
 
-factinject: factinject.o findpid.o inject.o
+factinject: factinject.o findpid.o inject.o rbreak.o
 	$(CC) $(LDFLAGS) $^ -o $@
 
 test0: test0.o

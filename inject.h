@@ -1,6 +1,10 @@
 #ifndef _INJECT_H
 #define _INJECT_H
 
+int save_remote_registers (int pid, struct user* ur);
+int restore_remote_registers (int pid, struct user* ur);
+
+
 /**
  * Synchronously:
  *    Save remote registers
@@ -16,9 +20,9 @@
  */
 int inject_and_run_text (int pid, int size, const uint8_t* text);
 
+void* inject_dlopen (int pid, const char* szsharedlib, uint32_t flags);
 
-int inject_dlopen (int pid, const char* szsharedlib, uint32_t flags);
-
+void* inject_dlsym (int pid, const char* szsymbol);
 
 
 #endif

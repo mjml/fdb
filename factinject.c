@@ -1,7 +1,6 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <dirent.h>
 #include <string.h>
 #include <errno.h>
 #include <dlfcn.h>
@@ -9,8 +8,10 @@
 #include <sys/ptrace.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/user.h>
 
 #include "findpid.h"
+#include "rbreak.h"
 #include "inject.h"
 
 int target_pid;
@@ -33,31 +34,25 @@ int main (int argc, char* argv[])
 	
 	// Attach via ptrace
 	printf("Attaching to process %d. ", target_pid);
-	if (ptrace(PTRACE_SEIZE,target_pid,0,0) == -1) {
+	if (ptrace(PTRACE_SEIZE,target_pid,0,PTRACE_O_TRACESYSGOOD) == -1) {
 		fprintf(stderr, "Error : %s\n", strerror(errno));
 		exit(1);
 	}
 
 	printf("Success.\n");
 	fflush(stdout);
-  
-	// Send interrupt
-	printf("Sending interrupt to %d. ", target_pid);
-	if (ptrace(PTRACE_INTERRUPT,target_pid,0,0) == -1) {
-		fprintf(stderr, "Error : %s\n", strerror(errno));
-		exit(2);
-	}
 
-	siginfo_t siginfo;
-	memset(&siginfo, 0, sizeof(siginfo_t));
-	waitid(P_PID, target_pid, &siginfo, WSTOPPED);
-	printf("It is stopped.\n", target_pid);
-
+	// Remote break the tracee
+	rbreak(target_pid);
+  		
 	// Inject self
 	printf("Inject current executable into tracee.\n");
   inject_dlopen(target_pid, "/home/joya/localdev/factinject/factinject", RTLD_NOW | RTLD_GLOBAL);
-	//inject_dlopen(target_pid, "libunwind.so", RTLD_NOW | RTLD_GLOBAL);
-	
+	//inject_dlopen(target_pid, "libunwind.so", RTLD_NOW);
+	printf("Done.\n");
+
+	printf("Calling dlsym to get a pointer to test_func()\n");
+	inject_dlsym(target_pid, "test_func");
 	printf("Done.\n");
 		
 	// Continue tracee

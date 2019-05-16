@@ -1,0 +1,11 @@
+#!/bin/sh
+
+pid=$(ps aux | grep factorio | grep -v grep | awk -e '{print $2}')
+
+if [[ -z $pid ]]; then
+		echo "Factorio isn't running!"
+		exit	 
+fi
+	 
+
+cat /proc/$pid/maps
