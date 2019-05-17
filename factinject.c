@@ -20,7 +20,7 @@ void cleanup ();
 int main (int argc, char* argv[])
 {
 	printf("---------------\n");
-	printf("factinject v0.1\n");
+	printf("factinject v0.2\n");
 	printf("---------------\n");
 	fflush(stdout);
 
