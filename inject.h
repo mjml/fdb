@@ -24,5 +24,7 @@ void* inject_dlopen (int pid, const char* szsharedlib, uint32_t flags);
 
 void* inject_dlsym (int pid, const char* szsymbol);
 
+void* inject_dlerror (int pid);
+
 
 #endif

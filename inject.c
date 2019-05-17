@@ -2,24 +2,24 @@
 #include <stdlib.h>
 #include <limits.h>
 #include <errno.h>
-#include <alloca.h>
 #include <inttypes.h>
 #include <memory.h>
 #include <assert.h>
-#include <regex.h>
 #include <sys/ptrace.h>
 #include <sys/user.h>
 #include <sys/wait.h>
 
+#include "segment.h"
 #include "inject.h"
 
 int grab_text (int pid, int size, void* remote, uint8_t* buffer);
 int inject_text (int pid, int size, void* remote, const uint8_t* text);
 
-static long find_segment_address_regex (int pid, const char* unitpath_regex, char* oname, int noname,
-																			 unsigned long* paddr, unsigned long* paddr2, unsigned long* poffset);
-static long find_symbol_offset_regex (const char* unitpath, const char* symbol_regex, char* sname, int nsname,
-																		 unsigned long* poffset);
+void print_siginfo (siginfo_t* ps)
+{
+	printf("siginfo.si_signo = %d   siginfo.si_code = %d   siginfo.si_errno = %d\n",
+				 ps->si_signo, ps->si_code, ps->si_errno);
+}
 
 int inject_and_run_text (int pid, int size, const uint8_t* text)
 {
@@ -154,7 +154,7 @@ void* inject_dlopen (int pid, const char* shlib_path, uint32_t flags)
 {
 	const int arg2_offset = 1;
 	const int arg1_offset = 32;
-	const int funcaddr_offset = 15;
+	const int funcaddr_offset = 14;
 	const int bufsz = 512;
 	uint8_t buffer[bufsz];
 	uint8_t saved[bufsz];
@@ -162,7 +162,6 @@ void* inject_dlopen (int pid, const char* shlib_path, uint32_t flags)
 	char unitpath[strsize];
 	char symbol[strsize];
 	struct user ur;
-	siginfo_t siginfo;
 	void *rip, *rip2;
 	void *rbp;
 	unsigned long segaddr, segaddr2;
@@ -176,8 +175,8 @@ void* inject_dlopen (int pid, const char* shlib_path, uint32_t flags)
 	memset(buffer, 0, bufsz);
 	memcpy(buffer, (uint8_t*)
 				 "\xbe\x02\x00\x00\x00"                      // mov    $0x2,%esi
-				 "\x48\x8d\x3d\x1b\x00\x00\x00"              // lea    0x1b(%rip),%rdi
-				 "\x48\xb8\x01\x02\x03\x04\x05\x06\x07\x08"  // mov    $0x0807060504030201, %rax
+				 "\x48\x8d\x3d\x14\x00\x00\x00"              // lea    0x14(%rip),%rdi
+				 "\x48\xb8\xd1\xd2\xd3\xd4\xd5\xd6\xd7\xd8"  // mov    $0x0807060504030201, %rax
 				 "\xff\xd0"                                  // call   *%rax
 				 "\xcc"                                      // int    3
 				 , 25);
@@ -187,7 +186,7 @@ void* inject_dlopen (int pid, const char* shlib_path, uint32_t flags)
 	// amend the blob with the sum of the segment address and symbol address of the target function
 	find_segment_address_regex(pid, "/libdl", unitpath, strsize, &segaddr, &segaddr2, &segoffset);
   find_symbol_offset_regex(unitpath, "dlopen@@", symbol, strsize, &symofs);
-	*((uint64_t*)(buffer+funcaddr_offset)) = segaddr + symofs;
+	*((uint64_t*)(buffer+funcaddr_offset)) = segaddr + segoffset + symofs;
 	printf("dlopen is located at 0x%lx\n", segaddr + segoffset + symofs);
 	
 	// save remote registers and existing rip text
@@ -212,8 +211,15 @@ void* inject_dlopen (int pid, const char* shlib_path, uint32_t flags)
 	}
 
 	// wait for the tracee to stop
-	printf("Waiting for completion...\n");
-	waitid(P_PID, pid, &siginfo, WSTOPPED);
+	int wstatus;
+	siginfo_t siginfo;
+	printf("Waiting for completion...");
+	waitpid(pid, &wstatus, 0);
+	if (WIFSTOPPED(wstatus)) {
+		printf("Stopped. WSTOPSIG(wstatus) = %d\n", WSTOPSIG(wstatus));
+		ptrace(PTRACE_GETSIGINFO,pid,0,&siginfo);
+		print_siginfo(&siginfo);
+	}
 	
 	// check the return code
 	struct user ur2;
@@ -242,14 +248,43 @@ void* inject_dlopen (int pid, const char* shlib_path, uint32_t flags)
 }
 
 
-void* inject_dlsym (int pid, const char* szsym)
+void* inject_dlsym (int pid, const char* symbolname)
 {
+	const int arg1_offset = 32;
+  const int funcaddr_offset = 9;
 	const int bufsz = 512;
 	uint8_t buffer[bufsz];
 	uint8_t saved[bufsz];
+	const int strsize = 512;
+	char unitpath[strsize];
+	char symbol[strsize];
 	struct user ur;
-	int r;
-	void *rip;
+	void *rip, *rip2;
+	void *rbp;
+	unsigned long segaddr, segaddr2;
+	unsigned long segoffset;
+	unsigned long symofs;
+	uint8_t r;
+	unsigned long factsegaddr, factsegaddr2;
+	unsigned long factsegsize;
+
+	// find dlsym's address and name
+	find_segment_address_regex(pid, "/libdl", unitpath, strsize, &segaddr, &segaddr2, &segoffset);
+  find_symbol_offset_regex(unitpath, "dlsym@@", symbol, strsize, &symofs);
+	
+	// create the injected blob
+	memset(buffer, 0, bufsz);
+	memcpy(buffer, (uint8_t*)
+				 "\x48\x8d\x3d\x20\x00\x00\x00"              // lea    0x20(%rip),%rdi
+				 "\x48\xb8\x01\x02\x03\x04\x05\x06\x07\x08"  // mov    $0x0807060504030201, %rax
+				 "\xff\xd0"                                  // call   *%rax
+				 "\xcc"                                      // int    3
+				 , 20);
+	strncpy((uint8_t*) buffer + arg1_offset, symbol, bufsz-arg1_offset);
+	
+	// amend the blob with the sum of the segment address and symbol address of the target function
+	*((uint64_t*)(buffer+funcaddr_offset)) = segaddr + segoffset + symofs;
+	printf("dlsym is located at 0x%lx\n", segaddr + segoffset + symofs);
 	
 	// save remote registers and existing rip text
 	if (r = save_remote_registers(pid, &ur)) {
@@ -262,7 +297,27 @@ void* inject_dlsym (int pid, const char* szsym)
 		return (void*)2;
 	}
 
+	// inject the blob
+	printf("Injecting codetext...\n");
+	inject_text (pid, bufsz, rip, buffer);
+	
+	// continue the tracee
+	if (ptrace(PTRACE_CONT, pid, 0, 0) == -1) {
+		fprintf(stderr,"Couldn't continue the tracee.\n");
+		return (void*)3;
+	}
 
+	// wait for the tracee to stop
+	int wstatus;
+	siginfo_t siginfo;
+	printf("Waiting for completion...");
+	waitpid(pid, &wstatus, 0);
+	if (WIFSTOPPED(wstatus)) {
+		printf("Stopped. WSTOPSIG(wstatus) = %d\n", WSTOPSIG(wstatus));
+		ptrace(PTRACE_GETSIGINFO,pid,0,&siginfo);
+		print_siginfo(&siginfo);
+	}
+	
 	// check the return code
 	struct user ur2;
 	if (r = save_remote_registers(pid, &ur2)) {
@@ -290,108 +345,104 @@ void* inject_dlsym (int pid, const char* szsym)
 	
 }
 
-
-
-
-
-/**
- * Returns the execution unit's address, or 0 for not found or UINT64_MAX for error.
- */
-long find_segment_address_regex (int pid, const char* unitpath_regex, char* oname, int noname,
-																 unsigned long* paddr, unsigned long* paddr2, unsigned long* poffset)
+void* inject_dlerror (int pid)
 {
+	const int arg1_offset = 32;
+  const int funcaddr_offset = 2;
+	const int bufsz = 512;
+	uint8_t buffer[bufsz];
+	uint8_t saved[bufsz];
 	const int strsize = 512;
-	char path[strsize];
+	char unitpath[strsize];
+	char symbol[strsize];
+	struct user ur;
+	void *rip, *rip2;
+	void *rbp;
+	unsigned long segaddr, segaddr2;
+	unsigned long segoffset;
+	unsigned long symofs;
+	uint8_t r;
+	unsigned long factsegaddr, factsegaddr2;
+	unsigned long factsegsize;
 
-	regex_t re;
-	if (regcomp(&re, unitpath_regex, REG_EXTENDED)) {
-		return 1;
+	// find dlsym's address and name
+	find_segment_address_regex(pid, "/libdl", unitpath, strsize, &segaddr, &segaddr2, &segoffset);
+  find_symbol_offset_regex(unitpath, "dlerror@@", symbol, strsize, &symofs);
+	
+	// create the injected blob
+	memset(buffer, 0, bufsz);
+	memcpy(buffer, (uint8_t*)
+				 "\x48\xb8\x01\x02\x03\x04\x05\x06\x07\x08"  // mov    $0x0807060504030201, %rax
+				 "\xff\xd0"                                  // call   *%rax
+				 "\xcc"                                      // int    3
+				 , 13);
+	
+	// amend the blob with the sum of the segment address and symbol address of the target function
+	*((uint64_t*)(buffer+funcaddr_offset)) = segaddr + segoffset + symofs;
+	printf("dlerror is located at 0x%lx\n", segaddr + segoffset + symofs);
+	
+	// save remote registers and existing rip text
+	if (r = save_remote_registers(pid, &ur)) {
+		fprintf(stderr, "Problem saving remote registers: %d\n", r);
+		return (void*)1;
+	}
+	rip = (void*)ur.regs.rip;
+	if (r = grab_text (pid, bufsz, rip, saved)) {
+		fprintf(stderr, "Problem grabbing text: %d\n", r);
+		return (void*)2;
 	}
 
-	snprintf(path, strsize, "/proc/%d/maps", pid);
-	FILE* fmap = fopen(path, "r");
-	if (fmap == NULL) {
-		return 2;
+	// inject the blob
+	printf("Injecting codetext...\n");
+	inject_text (pid, bufsz, rip, buffer);
+	
+	// continue the tracee
+	if (ptrace(PTRACE_CONT, pid, 0, 0) == -1) {
+		fprintf(stderr,"Couldn't continue the tracee.\n");
+		return (void*)3;
 	}
 
-	char* r;
+	// wait for the tracee to stop
+	int wstatus;
+	siginfo_t siginfo;
+	printf("Waiting for completion...");
+	waitpid(pid, &wstatus, 0);
+	if (WIFSTOPPED(wstatus)) {
+		printf("Stopped. WSTOPSIG(wstatus) = %d\n", WSTOPSIG(wstatus));
+		ptrace(PTRACE_GETSIGINFO,pid,0,&siginfo);
+		print_siginfo(&siginfo);
+	}
 	
-	do {
-		unsigned long saddr, saddr2;
-		unsigned long offs;
-		char privs[6];
-		char objname[strsize];
-		char line[strsize];
-		int n=0;
-		objname[0] = 0;
-		r = fgets(line, strsize, fmap);
-		n = sscanf(line, "%lx - %lx %4s %lx %*x:%*x %*d %s\n", &saddr, &saddr2, privs, &offs, objname);
-		if (n == 2) continue;
-		if (!regexec(&re,objname,(size_t)0,NULL,0) && strchr(privs, 'x')) {
-			*paddr = saddr;
-			if (paddr2) *paddr2 = saddr2;
-			if (poffset) *poffset = offs;
-			printf("Found segment %s at 0x%lx.\n", objname, *paddr);
-			strncpy(oname, objname, noname);
-			break;
-		}
-	} while (r != NULL);
+	// check the return code
+	struct user ur2;
+	if (r = save_remote_registers(pid, &ur2)) {
+		fprintf(stderr, "Problem saving remote registers: %d\n", r);
+		return (void*)4;
+	}
 
-	//if (segment_address == 0) {
-	//	printf("No match found.\n");
-	//}
+	printf("rax value: 0x%lx\n", ur2.regs.rax);
+	printf("rip difference: 0x%lx - %lx = %lu\n", ur2.regs.rip, ur.regs.rip, ur2.regs.rip - ur.regs.rip);
 	
-	fclose(fmap);
-	regfree(&re);
-	
-	return 0;
+	// restore tracee rip text and registers
+	printf("Restoring previous codetext\n");
+	if (r = inject_text(pid, bufsz, rip, saved)) {
+		fprintf(stderr, "Problem injecting saved codetext: %d\n", r);
+		return (void*)5;
+	}
+
+	printf("Restoring previous registers\n");
+	if (r =	restore_remote_registers (pid, &ur)) {
+		fprintf(stderr, "Problem restoring saved registers: %d\n", r);
+		return (void*)6;
+	}
+
+	printf("Continuing tracee...\n");
+	if (ptrace(PTRACE_CONT, pid, 0, 0) == -1) {
+		fprintf(stderr, "Couldn't continue the tracee after running code injection.\n");
+		return (void*)7;
+	}
+
+	return (void*)ur2.regs.rax;
 	
 }
 
-
-/**
- * 
- */
-static long find_symbol_offset_regex (const char* unitpath, const char* symbol_regex, char* sname, int nsname,
-																			unsigned long* poffset)
-{
-	const int strsize = 512;
-	char readelf_cmd[strsize];
-	char line[strsize];
-	regex_t re_symbol;
-	FILE* fhre;
-	int n;
-	char* r;
-	
-	if (regcomp(&re_symbol, symbol_regex, REG_EXTENDED)) {
-		return 1;
-	}
-	
-	snprintf(readelf_cmd, strsize, "readelf -s %s", unitpath);
-	//printf("# %s\n", readelf_cmd);
-	fhre = popen(readelf_cmd, "r");
-	do {
-		uint64_t sofs;
-		char symname[strsize];
-		r = fgets(line, strsize, fhre);
-		n = sscanf(line, "%*d: %lx %*d %*s %*s %*s %*s %s", &sofs, symname);
-		/*
-		if (n==2) {
-			printf("#%s", line);
-		} else {
-			printf(line);
-		} 
-		*/
-		if (!regexec(&re_symbol,symname,(size_t)0,NULL,0)) {
-			strncpy(sname, symname, nsname);
-			*poffset = sofs;
-			printf("Found symbol %s offset at 0x%lx.\n", symname, *poffset);
-			break;
-		}
-	} while (r != NULL);
-	
-	pclose(fhre);
-	regfree(&re_symbol);
-	return 0;
-	
-}

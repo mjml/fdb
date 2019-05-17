@@ -10,7 +10,6 @@
 #include <sys/wait.h>
 #include <sys/user.h>
 
-#include "findpid.h"
 #include "rbreak.h"
 #include "inject.h"
 
@@ -20,10 +19,12 @@ void cleanup ();
 
 int main (int argc, char* argv[])
 {
+	printf("---------------\n");
 	printf("factinject v0.1\n");
 	printf("---------------\n");
 	fflush(stdout);
-	
+
+#ifndef DEBUG_CHILD
   // Find the attachee process
 	target_pid = find_pid_by_pattern ("^factorio$");
 	if (!target_pid) {
@@ -31,7 +32,17 @@ int main (int argc, char* argv[])
 		fflush(stderr);
 		return 1;
 	}
-	
+#else
+	target_pid = fork();
+	if (target_pid == 0) {
+		execl("./exp2", "exp2", NULL);
+		return 0;
+	} else {
+		printf("Forked pid %d\n", target_pid);
+		sleep(1);
+	}
+#endif
+
 	// Attach via ptrace
 	printf("Attaching to process %d. ", target_pid);
 	if (ptrace(PTRACE_SEIZE,target_pid,0,PTRACE_O_TRACESYSGOOD) == -1) {
@@ -42,7 +53,7 @@ int main (int argc, char* argv[])
 	printf("Success.\n");
 	fflush(stdout);
 
-	// Remote break the tracee
+	// Traps the tracee
 	rbreak(target_pid);
   		
 	// Inject self
@@ -51,14 +62,25 @@ int main (int argc, char* argv[])
 	//inject_dlopen(target_pid, "libunwind.so", RTLD_NOW);
 	printf("Done.\n");
 
-	printf("Calling dlsym to get a pointer to test_func()\n");
-	inject_dlsym(target_pid, "test_func");
+	printf("Continuing...\n");
+	rcont(target_pid);
+	sleep(1);
+
+	
+	rbreak(target_pid);
+	printf("Calling dlerror\n");
+	inject_dlerror(target_pid);
 	printf("Done.\n");
+	
 		
 	// Continue tracee
 	if (ptrace(PTRACE_CONT,target_pid,0,0) == -1) {
 		fprintf(stderr, "Error : %s\n", strerror(errno));
 		exit(3);
+	}
+
+	while (1) {
+		
 	}
 	
 	// All done.
@@ -76,6 +98,7 @@ void test_func ()
 
 void cleanup()
 {
+	kill(target_pid, SIGKILL);
 }
 
 char factinjectpath[] = "/home/joya/localdev/factinject/factinject";
