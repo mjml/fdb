@@ -9,11 +9,10 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/user.h>
+#include <iostream>
 
 #include "rbreak.h"
-#include "inject.h"
-
-int target_pid;
+#include "Inject.hpp"
 
 void cleanup ();
 
@@ -24,67 +23,50 @@ int main (int argc, char* argv[])
 	printf("---------------\n");
 	fflush(stdout);
 
-#ifndef DEBUG_CHILD
-  // Find the attachee process
-	target_pid = find_pid_by_pattern ("^factorio$");
-	if (!target_pid) {
-		fprintf(stderr, "Coudln't attach to target process. Exiting.\n");
-		fflush(stderr);
-		return 1;
-	}
-#else
-	target_pid = fork();
-	if (target_pid == 0) {
-		execl("./exp2", "exp2", NULL);
-		return 0;
-	} else {
-		printf("Forked pid %d\n", target_pid);
-		sleep(1);
-	}
-#endif
+	Tracee* factorio = nullptr;
 
+  // Find the attachee "factorio"
+	try {
+		factorio = Tracee::FindByNamePattern("^factorio$");
+	} catch (std::runtime_error e) {
+		std::cerr << "Error finding factorio process:\n" << e.what();
+	}
+	
 	// Attach via ptrace
-	printf("Attaching to process %d. ", target_pid);
-	if (ptrace(PTRACE_SEIZE,target_pid,0,PTRACE_O_TRACESYSGOOD) == -1) {
-		fprintf(stderr, "Error : %s\n", strerror(errno));
-		exit(1);
-	}
-
+	printf("Attaching to process %d. ", factorio->pid);
+	factorio->Attach();
+	
 	printf("Success.\n");
 	fflush(stdout);
 
 	// Traps the tracee
-	rbreak(target_pid);
+	factorio->rbreak();
   		
 	// Inject self
 	printf("Inject current executable into tracee.\n");
-  inject_dlopen(target_pid, "/home/joya/localdev/factinject/factinject", RTLD_NOW | RTLD_GLOBAL);
-	//inject_dlopen(target_pid, "libunwind.so", RTLD_NOW);
+	factorio->Inject_dlopen("/home/joya/localdev/factinject/factinject", RTLD_NOW | RTLD_GLOBAL);
 	printf("Done.\n");
 
 	printf("Continuing...\n");
-	rcont(target_pid);
+	factorio->rcont();
 	sleep(1);
 
 	
-	rbreak(target_pid);
+	factorio->rbreak();
 	printf("Calling dlerror\n");
-	inject_dlerror(target_pid);
+	factorio->Inject_dlerror();
 	printf("Done.\n");
 	
 		
 	// Continue tracee
-	if (ptrace(PTRACE_CONT,target_pid,0,0) == -1) {
-		fprintf(stderr, "Error : %s\n", strerror(errno));
-		exit(3);
-	}
-
+	factorio->rcont();
+	
 	while (1) {
 		
 	}
 	
 	// All done.
-	cleanup();
+	delete factorio;
 	
 	return 0;
 }
@@ -95,11 +77,6 @@ void test_func ()
 	printf("Hello, PIE world!\n");
 }
 
-
-void cleanup()
-{
-	kill(target_pid, SIGKILL);
-}
 
 char factinjectpath[] = "/home/joya/localdev/factinject/factinject";
 
