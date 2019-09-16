@@ -8,8 +8,10 @@
 #include <sys/ptrace.h>
 #include <sys/user.h>
 #include <sys/wait.h>
+#include <sys/types.h>
 #include <regex.h>
 #include <dirent.h>
+#include <unistd.h>
 
 #include <fstream>
 #include <iostream>
@@ -188,6 +190,57 @@ int Tracee::GrabText (int size, void* rip, uint8_t* buffer)
 	
 	return 0;
 	
+}
+
+
+std::string Tracee::FindRemoteExecutablePath ()
+{
+	assert (pid);
+	char exelink[1024];
+	snprintf(exelink, 1024, "/proc/%d/exe", pid);
+	char exepath[1024];
+	memset(exepath, 0, 1024);
+	readlink(exelink, exepath, 1024);
+	return std::string(exepath);
+}
+
+
+uint64_t Tracee::FindRemoteSymbolByPattern (const char* regex_pattern)
+{
+	char cmd[1024];
+	uint64_t result = 0L;
+	regex_t regex;
+	regcomp(&regex, regex_pattern, REG_EXTENDED);
+	
+	std::string path = FindRemoteExecutablePath();
+	snprintf(cmd, 1024, "readelf -Ws %s", path.c_str());
+	FILE* cmdout = popen(cmd, "r");
+
+	int r = 0;
+	char* line = nullptr;
+	size_t n = 0;
+	do {
+		n = 0;
+		r = getline(&line, &n, cmdout);
+		//printf(line);
+		if (r == 0) {
+			free(line);
+			continue;
+		}
+		
+		if (r >= 1 && line && regexec(&regex, line, 0, nullptr, 0) == 0) {
+			int ignore=0;
+			sscanf(line, "%d: %xl", &ignore, &result);
+			free(line);
+			break;
+		}
+		
+	} while (r >= 0);
+	
+	pclose(cmdout);
+	regfree(&regex);
+	
+	return result;
 }
 
 

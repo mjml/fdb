@@ -22,18 +22,19 @@
 
 void cleanup ();
 
-struct factorio_logger_traits
+struct factinject_logger_traits
 {
 	constexpr static const char* name = "factinject";
 	constexpr static int logLevel = LOGLEVEL_FACTINJECT;
 };
 
+typedef Log<factinject_logger_traits> Logger;
+
 int main (int argc, char* argv[])
 {
-	
-	printf("---------------\n");
-	printf("factinject v0.2\n");
-	printf("---------------\n");
+	Logger::initialize();
+
+	Logger::print("Startup.");
 	fflush(stdout);
 	
 	Tracee* factorio = nullptr;
@@ -42,30 +43,32 @@ int main (int argc, char* argv[])
 	try {
 		factorio = Tracee::FindByNamePattern("^factorio$");
 	} catch (std::runtime_error e) {
-		std::cerr << "Error finding factorio process:\n" << e.what();
+		Logger::error("Error finding factorio process: %s", e.what());
 	}
 	
 	// Attach via ptrace
-	printf("Attaching to process %d. ", factorio->pid);
+	Logger::print("Attaching to process %d.", factorio->pid);
 	factorio->Attach();
 	
-	printf("Success.\n");
+	Logger::print("Success.\n");
 	fflush(stdout);
 	
 	// Inject self
-	printf("Inject current executable into tracee.\n");
+	Logger::info("Inject current executable into tracee.");
 	factorio->rbreak();
 	factorio->Inject_dlopen("/home/joya/localdev/factinject/factinject", RTLD_NOW | RTLD_GLOBAL);
-	printf("Done.\n");
+	Logger::info("Done.");
 	factorio->rcont();
 	sleep(1);
 
 	// Call dlerror
 	factorio->rbreak();
-	printf("Calling dlerror\n");
+	Logger::detail("Calling dlerror");
 	factorio->Inject_dlerror();
-	printf("Done.\n");
+	Logger::detail("Done.");
 	factorio->rcont();
+
+	// Trap a Lua function in order to find Lua_context*
 
 	// spinwait
 	while (1) {
@@ -74,6 +77,8 @@ int main (int argc, char* argv[])
 	
 	// All done.
 	delete factorio;
+
+	log::finalize();
 	
 	return 0;
 }

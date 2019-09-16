@@ -73,8 +73,9 @@ public:
 };
 
 
-template <>
-FILE* Log<>::logfile;
+
+template <class logger_traits>
+FILE* Log<logger_traits>::logfile;
 
 
 template<class logger_traits>

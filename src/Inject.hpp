@@ -1,5 +1,7 @@
 #pragma once
 
+#include <signal.h>
+#include <string>
 
 struct Tracee
 {
@@ -18,6 +20,10 @@ struct Tracee
 	int rbreak ();
 
 	int rcont ();
+
+	std::string FindRemoteExecutablePath ();
+	
+	uint64_t FindRemoteSymbolByPattern (const char* regex_pattern);
 	
 	int SaveRemoteRegisters (struct user* ur);
 

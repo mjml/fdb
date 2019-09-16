@@ -1,26 +1,27 @@
 CC=gcc
 CXX=g++
-CFLAGS=-I.
+CFLAGS=-I. -fpie -fexceptions
+CXXFLAGS=-I. -std=c++17 -fpie -fexceptions
 RM=rm
 LDFLAGS=-pie -ldl -g
 
 default: factinject exp0 exp1 exp2
 
 clean:
-	$(RM) -rf *.o factinject test? exp?
+	$(RM) -rf *.o *.obj factinject test? exp?
 
-factinject: factinject.obj inject.o rbreak.o segment.o Inject.obj util/log.obj
+factinject: factinject.obj segment.o Inject.obj util/log.obj
 	$(CXX) $(LDFLAGS) $^ -o $@
 
 test0: test0.o
 	$(CC) -g $^ -o $@
 
-exp%: exp%.o
-	$(CC) $(LDFLAGS) $^ -o $@
+exp%: exp%.o Inject.obj segment.o
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $^ -o $@
 
 %.o: %.c
-	$(CC) $(CFLAGS) -fpie -fexceptions -g -c $^ -o $@
+	$(CC) $(CFLAGS) -g -c $^ -o $@
 
 %.obj: %.cpp
-	$(CXX) $(CFLAGS) -fpie -fexceptions -g -c $^ -o $@
+	$(CXX) $(CXXFLAGS) -g -c $^ -o $@
 
