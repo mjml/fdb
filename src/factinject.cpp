@@ -11,18 +11,31 @@
 #include <sys/user.h>
 #include <iostream>
 
-#include "rbreak.h"
+#define APPNAME "factinject"
+
+#include "util/log.hpp"
 #include "Inject.hpp"
+
+#ifndef LOGLEVEL_FACTINJECT
+#define LOGLEVEL_FACTINJECT 5
+#endif
 
 void cleanup ();
 
+struct factorio_logger_traits
+{
+	constexpr static const char* name = "factinject";
+	constexpr static int logLevel = LOGLEVEL_FACTINJECT;
+};
+
 int main (int argc, char* argv[])
 {
+	
 	printf("---------------\n");
 	printf("factinject v0.2\n");
 	printf("---------------\n");
 	fflush(stdout);
-
+	
 	Tracee* factorio = nullptr;
 
   // Find the attachee "factorio"
@@ -38,29 +51,23 @@ int main (int argc, char* argv[])
 	
 	printf("Success.\n");
 	fflush(stdout);
-
-	// Traps the tracee
-	factorio->rbreak();
-  		
+	
 	// Inject self
 	printf("Inject current executable into tracee.\n");
+	factorio->rbreak();
 	factorio->Inject_dlopen("/home/joya/localdev/factinject/factinject", RTLD_NOW | RTLD_GLOBAL);
 	printf("Done.\n");
-
-	printf("Continuing...\n");
 	factorio->rcont();
 	sleep(1);
 
-	
+	// Call dlerror
 	factorio->rbreak();
 	printf("Calling dlerror\n");
 	factorio->Inject_dlerror();
 	printf("Done.\n");
-	
-		
-	// Continue tracee
 	factorio->rcont();
-	
+
+	// spinwait
 	while (1) {
 		
 	}
