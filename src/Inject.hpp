@@ -36,7 +36,8 @@ struct SymbolTable
 {
 	std::string path;
 	std::map<std::string,int> offsets;
-	
+
+	SymbolTable () {}
 	SymbolTable (std::string& path);
 	~SymbolTable ();
 
@@ -47,12 +48,30 @@ struct SymbolTable
 };
 
 
-struct Tracee
+struct Process
 {
 	int pid;
+	bool parsed_stable;
+	SymbolTable stable;
 
-	Tracee () : pid(0) {}
-	Tracee (int _pid) : pid(_pid) {}
+	Process () : pid(0), parsed_stable(false) {}
+	Process (int _pid) : pid(_pid), parsed_stable(false) {}
+	~Process () {}
+	
+	
+	std::string FindRemoteExecutablePath ();
+	
+	uint64_t FindRemoteSymbolOffsetByPattern (const char* regex_pattern);
+
+	uint64_t FindSegmentByPattern (const char* regex_pattern);
+	
+};
+
+struct Tracee : public Process
+{
+
+	Tracee () : Process() {}
+	Tracee (int _pid) : Process(_pid) {}
 	~Tracee () {}
 	
 	static Tracee* FindByNamePattern (const char* regex_pattern);
@@ -65,10 +84,6 @@ struct Tracee
 
 	int rcont ();
 
-	std::string FindRemoteExecutablePath ();
-	
-	uint64_t FindRemoteSymbolOffsetByPattern (const char* regex_pattern);
-	
 	int SaveRemoteRegisters (struct user* ur);
 
 	int RestoreRemoteRegisters (struct user* ur);
@@ -84,8 +99,6 @@ struct Tracee
 	void* Inject_dlsym (const char* szsymbol);
 
 	void* Inject_dlerror ();
-
-	
 	
 };
 

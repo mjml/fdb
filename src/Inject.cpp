@@ -42,7 +42,7 @@ void SymbolTable::Parse (const std::string& _path)
 
 	offsets.clear();
 	
-	snprintf(cmd, 1024, "readelf -Ws %s", path.c_str());
+	snprintf(cmd, 1024, "readelf -Ws %s", _path.c_str());
 	FILE* cmdout = popen(cmd, "r");
 
 	int r = 0;
@@ -76,6 +76,8 @@ void SymbolTable::Parse (const std::string& _path)
 	} while (r >= 0);
 	
 	pclose(cmdout);
+	
+	path = _path;
 }
 
 
@@ -90,6 +92,35 @@ uint64_t SymbolTable::FindSymbolOffsetByPattern (const char* regex_pattern)
 		}
 	}
 	regfree(&regex);
+	return result;
+}
+
+
+std::string Process::FindRemoteExecutablePath ()
+{
+	assert (pid);
+	char exelink[1024];
+	snprintf(exelink, 1024, "/proc/%d/exe", pid);
+	char exepath[1024];
+	memset(exepath, 0, 1024);
+	readlink(exelink, exepath, 1024);
+	return std::string(exepath);
+}
+
+
+uint64_t Process::FindRemoteSymbolOffsetByPattern (const char* regex_pattern)
+{
+	char cmd[1024];
+	uint64_t result = 0L;
+
+	std::string path = FindRemoteExecutablePath();
+	if (!parsed_stable) {
+		stable.Parse(path);
+		parsed_stable = true;
+	}
+	
+	result = stable.FindSymbolOffsetByPattern(regex_pattern);
+
 	return result;
 }
 
@@ -134,6 +165,7 @@ Tracee* Tracee::FindByNamePattern (const char* regex_pattern)
 	
 	return new Tracee(result);
 }
+
 
 void Tracee::Attach ()
 {
@@ -256,32 +288,6 @@ int Tracee::GrabText (int size, void* rip, uint8_t* buffer)
 	
 	return 0;
 	
-}
-
-
-std::string Tracee::FindRemoteExecutablePath ()
-{
-	assert (pid);
-	char exelink[1024];
-	snprintf(exelink, 1024, "/proc/%d/exe", pid);
-	char exepath[1024];
-	memset(exepath, 0, 1024);
-	readlink(exelink, exepath, 1024);
-	return std::string(exepath);
-}
-
-
-uint64_t Tracee::FindRemoteSymbolOffsetByPattern (const char* regex_pattern)
-{
-	char cmd[1024];
-	uint64_t result = 0L;
-
-	std::string path = FindRemoteExecutablePath();
-	SymbolTable stable(path);
-
-	result = stable.FindSymbolOffsetByPattern(regex_pattern);
-
-	return result;
 }
 
 
