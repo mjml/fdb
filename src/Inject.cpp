@@ -27,13 +27,79 @@ static void print_siginfo (siginfo_t* ps)
 }
 
 
+SymbolTable::SymbolTable (std::string& _path) 
+	: path(_path)
+{
+	Parse(path);
+};
+
+SymbolTable::~SymbolTable () {}
+
+
+void SymbolTable::Parse (const std::string& _path)
+{
+	char cmd[1024];
+
+	offsets.clear();
+	
+	snprintf(cmd, 1024, "readelf -Ws %s", path.c_str());
+	FILE* cmdout = popen(cmd, "r");
+
+	int r = 0;
+	char* line = nullptr;
+	size_t n = 0;
+	
+	for (int i=0; i < 3; i++) {
+		r = getline(&line, &n, cmdout);
+		free(line);
+		line = nullptr;
+	}
+	
+	do {
+		n = 0;
+		r = getline(&line, &n, cmdout);
+		if (r == 0) {
+			free(line);
+			line = nullptr;
+			continue;
+		}
+		uint64_t offset = 0;
+		char sym_name[1024];
+		sym_name[0] = 0;
+		int c = sscanf(line, "%*d: %lx %*d %*s %*s %*s %*s %1023s %*s", &offset, sym_name);
+		if (c == 2) {
+			offsets.emplace(std::string(sym_name), offset);
+		}
+		free(line);
+		line = nullptr;
+		
+	} while (r >= 0);
+	
+	pclose(cmdout);
+}
+
+
+uint64_t SymbolTable::FindSymbolOffsetByPattern (const char* regex_pattern)
+{
+	regex_t regex;
+	uint64_t result = 0;
+	regcomp(&regex, regex_pattern, REG_EXTENDED);
+	for (auto it = offsets.begin(); it != offsets.end(); it++) {
+		if (!regexec(&regex, it->first.c_str(), 0, nullptr, 0)) {
+			result = it->second;
+		}
+	}
+	regfree(&regex);
+	return result;
+}
+
 
 Tracee* Tracee::FindByNamePattern (const char* regex_pattern)
 {
 	int result=0;
 	regex_t regex;
 	regcomp (&regex, regex_pattern, REG_EXTENDED);
-
+	
 	DIR* procdir = opendir("/proc");
 	struct dirent* de = readdir(procdir);
 	while (de) {
@@ -43,8 +109,8 @@ Tracee* Tracee::FindByNamePattern (const char* regex_pattern)
 			continue;
 		}
 
-		char cmdpathfn[256];
-		snprintf(cmdpathfn, 256, "/proc/%d/comm", pid);
+		char cmdpathfn[1024];
+		snprintf(cmdpathfn, 1024, "/proc/%d/comm", pid);
 
 		std::fstream fs(cmdpathfn, std::ios::in);
 		std::string str;
@@ -205,41 +271,16 @@ std::string Tracee::FindRemoteExecutablePath ()
 }
 
 
-uint64_t Tracee::FindRemoteSymbolByPattern (const char* regex_pattern)
+uint64_t Tracee::FindRemoteSymbolOffsetByPattern (const char* regex_pattern)
 {
 	char cmd[1024];
 	uint64_t result = 0L;
-	regex_t regex;
-	regcomp(&regex, regex_pattern, REG_EXTENDED);
-	
-	std::string path = FindRemoteExecutablePath();
-	snprintf(cmd, 1024, "readelf -Ws %s", path.c_str());
-	FILE* cmdout = popen(cmd, "r");
 
-	int r = 0;
-	char* line = nullptr;
-	size_t n = 0;
-	do {
-		n = 0;
-		r = getline(&line, &n, cmdout);
-		//printf(line);
-		if (r == 0) {
-			free(line);
-			continue;
-		}
-		
-		if (r >= 1 && line && regexec(&regex, line, 0, nullptr, 0) == 0) {
-			int ignore=0;
-			sscanf(line, "%d: %xl", &ignore, &result);
-			free(line);
-			break;
-		}
-		
-	} while (r >= 0);
-	
-	pclose(cmdout);
-	regfree(&regex);
-	
+	std::string path = FindRemoteExecutablePath();
+	SymbolTable stable(path);
+
+	result = stable.FindSymbolOffsetByPattern(regex_pattern);
+
 	return result;
 }
 

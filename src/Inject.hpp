@@ -1,7 +1,51 @@
 #pragma once
 
 #include <signal.h>
+#include <map>
 #include <string>
+
+struct Tracee;
+
+struct Breakpoint
+{
+	Tracee*   tracee;
+	bool      enabled;
+	uint64_t  r_addr;
+	uint8_t   savedbyte;
+	
+	Breakpoint(Tracee* _tracee, bool _enabled, uint64_t _r_addr);
+	~Breakpoint();
+	
+	void Enable ();
+	void Disable ();
+	
+};
+
+
+struct BreakpointMgr
+{
+	static std::map<uint64_t, Breakpoint> bpmap;
+
+	static void Wait ();
+	
+	static Breakpoint& FindBreakpoint (uint64_t rip);
+};
+
+
+struct SymbolTable
+{
+	std::string path;
+	std::map<std::string,int> offsets;
+	
+	SymbolTable (std::string& path);
+	~SymbolTable ();
+
+	uint64_t FindSymbolOffsetByPattern (const char* regex_pattern);
+
+	void Parse (const std::string& _path);
+	
+};
+
 
 struct Tracee
 {
@@ -23,7 +67,7 @@ struct Tracee
 
 	std::string FindRemoteExecutablePath ();
 	
-	uint64_t FindRemoteSymbolByPattern (const char* regex_pattern);
+	uint64_t FindRemoteSymbolOffsetByPattern (const char* regex_pattern);
 	
 	int SaveRemoteRegisters (struct user* ur);
 
