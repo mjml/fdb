@@ -17,6 +17,7 @@
 #include <iostream>
 #include <stdexcept>
 
+#include "util/exceptions.hpp"
 #include "segment.h"
 #include "Inject.hpp"
 
@@ -39,7 +40,7 @@ SymbolTable::~SymbolTable () {}
 void SymbolTable::Parse (const std::string& _path)
 {
 	char cmd[1024];
-
+	
 	offsets.clear();
 	
 	snprintf(cmd, 1024, "readelf -Ws %s", _path.c_str());
@@ -96,7 +97,7 @@ uint64_t SymbolTable::FindSymbolOffsetByPattern (const char* regex_pattern)
 }
 
 
-std::string Process::FindRemoteExecutablePath ()
+std::string Process::FindExecutablePath ()
 {
 	assert (pid);
 	char exelink[1024];
@@ -108,20 +109,64 @@ std::string Process::FindRemoteExecutablePath ()
 }
 
 
-uint64_t Process::FindRemoteSymbolOffsetByPattern (const char* regex_pattern)
+uint64_t Process::FindSymbolOffsetByPattern (const char* regex_pattern)
 {
 	char cmd[1024];
 	uint64_t result = 0L;
 
-	std::string path = FindRemoteExecutablePath();
-	if (!parsed_stable) {
-		stable.Parse(path);
-		parsed_stable = true;
+	std::string path = FindExecutablePath();
+	if (!parsed_symtable) {
+		symtable.Parse(path);
+		parsed_symtable = true;
 	}
 	
-	result = stable.FindSymbolOffsetByPattern(regex_pattern);
+	result = symtable.FindSymbolOffsetByPattern(regex_pattern);
 
 	return result;
+}
+
+
+uint64_t Process::FindSegmentByPattern (const char* regex_pattern, char* flags)
+{
+	uint64_t result = 0;
+	
+	return result;
+}
+
+void Process::ParseSegments ()
+{
+	char mapsfn[1024];
+	char line[2048];
+	char name[1024];
+	snprintf(mapsfn,1024,"/proc/%d/maps", pid);
+
+	std::ifstream mapsfile (mapsfn);
+	assert_rune(mapsfile.good(), "Couldn't open %s", mapsfn);
+
+	segtable.clear();
+
+	SegInfo segi;
+	do {
+		
+		mapsfile.getline(line,2048);
+		
+		sscanf(line, "%lx - %lx %s %x %*x:%*x %*d %s",
+					 &segi.start,
+					 &segi.end,
+					 &segi.flags,
+					 &segi.offset,
+					 &segi.maj,
+					 &segi.min,
+					 &segi.inode,
+					 name
+					 );
+		segi.file = std::string(name);
+		
+		segtable.emplace_back(segi);
+		
+	} while (!mapsfile.eof());
+	
+	
 }
 
 
@@ -182,7 +227,7 @@ void Tracee::Attach ()
 	}
 }
 
-int Tracee::SaveRemoteRegisters (struct user* ur)
+int Tracee::SaveRegisters (struct user* ur)
 {
 	if (ptrace(PTRACE_GETREGS, pid, 0, &ur->regs) == -1) {
 		return 1;
@@ -196,7 +241,7 @@ int Tracee::SaveRemoteRegisters (struct user* ur)
 }
 
 
-int Tracee::RestoreRemoteRegisters (struct user* ur)
+int Tracee::RestoreRegisters (struct user* ur)
 {
 	if (ptrace(PTRACE_SETREGS, pid, 0, &ur->regs) == -1) {
 		return 1;
@@ -231,7 +276,7 @@ int Tracee::rbreak ()
 		waitpid(pid, &wstatus,0);
 		printf("Stopped: ");
 
-		//SaveRemoteRegisters(&ur);
+		//SaveRegisters(&ur);
 		
 		ptrace(PTRACE_GETSIGINFO, pid, 0, &siginfo);
 		if (WIFSTOPPED(wstatus)) {
@@ -317,7 +362,7 @@ int Tracee::InjectAndRunText (int size, const uint8_t* text)
 	struct user regset;
 
 	/* save state */
-	if (SaveRemoteRegisters(&regset)) {
+	if (SaveRegisters(&regset)) {
 		return 1;
 	}
 
@@ -362,7 +407,7 @@ int Tracee::InjectAndRunText (int size, const uint8_t* text)
 		return 7;
 	}
 
-	if (RestoreRemoteRegisters(&regset)) {
+	if (RestoreRegisters(&regset)) {
 		return 8;
 	}
 		
@@ -411,7 +456,7 @@ void* Tracee::Inject_dlopen (const char* shlib_path, uint32_t flags)
 	printf("dlopen is located at 0x%lx\n", segaddr + segoffset + symofs);
 	
 	// save remote registers and existing rip text
-	if (r = SaveRemoteRegisters(&ur)) {
+	if (r = SaveRegisters(&ur)) {
 		fprintf(stderr, "Problem saving remote registers: %d\n", r);
 		return (void*)1;
 	}
@@ -444,7 +489,7 @@ void* Tracee::Inject_dlopen (const char* shlib_path, uint32_t flags)
 	
 	// check the return code
 	struct user ur2;
-	if (r = SaveRemoteRegisters(&ur2)) {
+	if (r = SaveRegisters(&ur2)) {
 		fprintf(stderr, "Problem saving remote registers: %d\n", r);
 		return (void*)4;
 	}
@@ -460,7 +505,7 @@ void* Tracee::Inject_dlopen (const char* shlib_path, uint32_t flags)
 	}
 
 	printf("Restoring previous registers\n");
-	if (r =	RestoreRemoteRegisters (&ur)) {
+	if (r =	RestoreRegisters (&ur)) {
 		fprintf(stderr, "Problem restoring saved registers: %d\n", r);
 		return (void*)6;
 	}
@@ -508,7 +553,7 @@ void* Tracee::Inject_dlsym (const char* szsymbol)
 	printf("dlsym is located at 0x%lx\n", segaddr + segoffset + symofs);
 	
 	// save remote registers and existing rip text
-	if (r = SaveRemoteRegisters(&ur)) {
+	if (r = SaveRegisters(&ur)) {
 		fprintf(stderr, "Problem saving remote registers: %d\n", r);
 		return (void*)1;
 	}
@@ -541,7 +586,7 @@ void* Tracee::Inject_dlsym (const char* szsymbol)
 	
 	// check the return code
 	struct user ur2;
-	if (r = SaveRemoteRegisters(&ur2)) {
+	if (r = SaveRegisters(&ur2)) {
 		fprintf(stderr, "Problem saving remote registers: %d\n", r);
 		return (void*)4;
 	}
@@ -557,7 +602,7 @@ void* Tracee::Inject_dlsym (const char* szsymbol)
 	}
 
 	printf("Restoring previous registers\n");
-	if (r =	RestoreRemoteRegisters (&ur)) {
+	if (r =	RestoreRegisters (&ur)) {
 		fprintf(stderr, "Problem restoring saved registers: %d\n", r);
 		return (void*)6;
 	}
@@ -602,7 +647,7 @@ void* Tracee::Inject_dlerror ()
 	printf("dlerror is located at 0x%lx\n", segaddr + segoffset + symofs);
 	
 	// save remote registers and existing rip text
-	if (r = SaveRemoteRegisters(&ur)) {
+	if (r = SaveRegisters(&ur)) {
 		fprintf(stderr, "Problem saving remote registers: %d\n", r);
 		return (void*)1;
 	}
@@ -635,7 +680,7 @@ void* Tracee::Inject_dlerror ()
 	
 	// check the return code
 	struct user ur2;
-	if (r = SaveRemoteRegisters(&ur2)) {
+	if (r = SaveRegisters(&ur2)) {
 		fprintf(stderr, "Problem saving remote registers: %d\n", r);
 		return (void*)4;
 	}
@@ -651,7 +696,7 @@ void* Tracee::Inject_dlerror ()
 	}
 
 	printf("Restoring previous registers\n");
-	if (r =	RestoreRemoteRegisters (&ur)) {
+	if (r =	RestoreRegisters (&ur)) {
 		fprintf(stderr, "Problem restoring saved registers: %d\n", r);
 		return (void*)6;
 	}

@@ -1,8 +1,10 @@
 #pragma once
 
 #include <signal.h>
+#include <vector>
 #include <map>
 #include <string>
+
 
 struct Tracee;
 
@@ -47,23 +49,49 @@ struct SymbolTable
 	
 };
 
+struct SegInfo
+{
+	uint64_t start;
+	uint64_t end;
+	char flags[5];
+	int offset;
+	char maj;
+	char min;
+	uint32_t inode;
+	std::string file;
+
+	SegInfo()
+		: start(0),
+			end(0),
+			flags{0,0,0,0,0},
+			offset(0),
+			maj(0),
+			min(0),
+			inode(0),
+			file() {}
+	~SegInfo() {}
+};
+
 
 struct Process
 {
 	int pid;
-	bool parsed_stable;
-	SymbolTable stable;
-
-	Process () : pid(0), parsed_stable(false) {}
-	Process (int _pid) : pid(_pid), parsed_stable(false) {}
+	bool parsed_symtable;
+	SymbolTable symtable;
+	bool parsed_segments;
+	std::vector<SegInfo> segtable;
+	
+	Process () : pid(0), parsed_symtable(false), segtable(500) {}
+	Process (int _pid) : pid(_pid), parsed_symtable(false), segtable(500) {}
 	~Process () {}
 	
+	std::string FindExecutablePath ();
 	
-	std::string FindRemoteExecutablePath ();
+	uint64_t FindSymbolOffsetByPattern (const char* regex_pattern);
 	
-	uint64_t FindRemoteSymbolOffsetByPattern (const char* regex_pattern);
-
-	uint64_t FindSegmentByPattern (const char* regex_pattern);
+	uint64_t FindSegmentByPattern (const char* regex_pattern, char* flags);
+	
+	void ParseSegments ();
 	
 };
 
@@ -84,9 +112,9 @@ struct Tracee : public Process
 
 	int rcont ();
 
-	int SaveRemoteRegisters (struct user* ur);
+	int SaveRegisters (struct user* ur);
 
-	int RestoreRemoteRegisters (struct user* ur);
+	int RestoreRegisters (struct user* ur);
 
 	int GrabText (int size, void* rip, uint8_t* buffer);
 
