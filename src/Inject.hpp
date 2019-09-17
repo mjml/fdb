@@ -78,20 +78,26 @@ struct Process
 	int pid;
 	bool parsed_symtable;
 	SymbolTable symtable;
-	bool parsed_segments;
+	bool parsed_segtable;
 	std::vector<SegInfo> segtable;
 	
-	Process () : pid(0), parsed_symtable(false), segtable(500) {}
-	Process (int _pid) : pid(_pid), parsed_symtable(false), segtable(500) {}
+	Process () : pid(0), parsed_symtable(false), parsed_segtable(false), segtable(500) {}
+	Process (int _pid) : pid(_pid), parsed_symtable(false), parsed_segtable(false), segtable(500) {}
 	~Process () {}
 	
 	std::string FindExecutablePath ();
 	
+	void ParseSymbolTable ();
+	
+	void ParseSegmentMap ();
+	
 	uint64_t FindSymbolOffsetByPattern (const char* regex_pattern);
+
+	uint64_t FindSymbolAddressByPattern (const char* regex_pattern);
+
+	uint64_t FindSymbolAddressByPattern (const char* pat_symbol, const char* module);
 	
-	uint64_t FindSegmentByPattern (const char* regex_pattern, char* flags);
-	
-	void ParseSegments ();
+	uint64_t FindSegmentByPattern (const char* regex_pattern, const char* flags);
 	
 };
 

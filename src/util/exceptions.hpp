@@ -2,11 +2,15 @@
 
 #include <stdarg.h>
 
+#ifndef DEBUG
+#define DEBUG false
+#endif
+
 
 template<class E>
 inline void assert_e (bool condition, const char* fmt, ...)
 {
-	if (condition) return;
+	if (!DEBUG || condition) return;
 	
 	char msg[4096];
 	va_list ap;
@@ -18,7 +22,7 @@ inline void assert_e (bool condition, const char* fmt, ...)
 	throw E(msg);
 }
 
-inline void assert_rune (bool condition, const char* fmt, ...)
+inline void assert_re (bool condition, const char* fmt, ...)
 {
 	assert_e<std::runtime_error> (condition, fmt);
 }

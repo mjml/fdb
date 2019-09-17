@@ -14,21 +14,15 @@
 #define APPNAME "factinject"
 
 #include "util/log.hpp"
+#include "util/exceptions.hpp"
+#include "factinject_logger.hpp"
 #include "Inject.hpp"
 
 #ifndef LOGLEVEL_FACTINJECT
-#define LOGLEVEL_FACTINJECT 5
+#define LOGLEVEL_FACTINJECT 6
 #endif
 
 void cleanup ();
-
-struct factinject_logger_traits
-{
-	constexpr static const char* name = "factinject";
-	constexpr static int logLevel = LOGLEVEL_FACTINJECT;
-};
-
-typedef Log<factinject_logger_traits> Logger;
 
 int main (int argc, char* argv[])
 {
@@ -44,13 +38,15 @@ int main (int argc, char* argv[])
 		factorio = Tracee::FindByNamePattern("^factorio$");
 	} catch (std::runtime_error e) {
 		Logger::error("Error finding factorio process: %s", e.what());
+		fprintf(stderr, "Couldn't find factorio, sorry!\n");
+		fflush(stderr);
+		std::exit(1);
 	}
 	
 	// Attach via ptrace
 	Logger::print("Attaching to process %d.", factorio->pid);
 	factorio->Attach();
-	
-	Logger::print("Success.\n");
+	Logger::print("Success.");
 	fflush(stdout);
 	
 	// Inject self
@@ -67,9 +63,14 @@ int main (int argc, char* argv[])
 	factorio->Inject_dlerror();
 	Logger::detail("Done.");
 	factorio->rcont();
-
+	
 	// Trap a Lua function in order to find Lua_context*
-
+	factorio->rbreak();
+	factorio->ParseSymbolTable();
+	factorio->ParseSegmentMap();
+	factorio->rcont();
+	
+	
 	// spinwait
 	while (1) {
 		

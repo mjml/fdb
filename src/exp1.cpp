@@ -16,9 +16,17 @@ void init_dlfcns()
 
 int main ()
 {
-	Tracee* tracee = Tracee::FindByNamePattern("^factorio$");
+	Tracee* tracee = nullptr;
+	try {
+		 tracee = Tracee::FindByNamePattern("^factorio$");
+	} catch (...) {
+		std::cerr << "factorio doesn't seem to be running." << std::endl;
+		std::exit(1);
+	}
+	
 	std::cout << tracee->FindExecutablePath() << std::endl;
-	std::cout << "lua_setglobal is at 0x" << std::hex << tracee->FindSymbolOffsetByPattern("lua_setglobal") << std::endl;
+	
+	std::cout << "lua_setglobal offset is at 0x" << std::hex << tracee->FindSymbolOffsetByPattern("lua_setglobal") << std::endl;
 	
 	return 0;
 }

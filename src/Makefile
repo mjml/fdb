@@ -1,7 +1,7 @@
 CC=gcc
 CXX=g++
-CFLAGS=-I. -fpie -fexceptions
-CXXFLAGS=-I. -std=c++17 -fpie -fexceptions
+CFLAGS=-I. -DDEBUG -DLOGLEVEL_FACTINJECT=6 -fpie -fexceptions
+CXXFLAGS=-I. -DDEBUG -DLOGLEVEL_FACTINJECT=6 -std=c++17 -fpie -fexceptions
 RM=rm
 LDFLAGS=-pie -ldl -g
 

@@ -16,8 +16,10 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
+#include <regex>
 
 #include "util/exceptions.hpp"
+#include "factinject_logger.hpp"
 #include "segment.h"
 #include "Inject.hpp"
 
@@ -82,6 +84,63 @@ void SymbolTable::Parse (const std::string& _path)
 }
 
 
+std::string Process::FindExecutablePath ()
+{
+	assert (pid);
+	char exelink[1024];
+	snprintf(exelink, 1024, "/proc/%d/exe", pid);
+	char exepath[1024];
+	memset(exepath, 0, 1024);
+	readlink(exelink, exepath, 1024);
+	return std::string(exepath);
+}
+
+
+void Process::ParseSymbolTable ()
+{
+	std::string executable_path = FindExecutablePath();
+	symtable.Parse(executable_path);
+	parsed_symtable = true;
+}
+
+void Process::ParseSegmentMap ()
+{
+	char mapsfn[1024];
+	char line[2048];
+	char name[1024];
+	snprintf(mapsfn,1024,"/proc/%d/maps", pid);
+	
+	std::ifstream mapsfile (mapsfn);
+	assert_re (mapsfile.good(), "Couldn't open %s", mapsfn);
+	
+	segtable.clear();
+	
+	SegInfo segi;
+	do {
+		
+		name[0] = 0;
+		mapsfile.getline(line,2048);
+		sscanf(line, "%lx - %lx %s %x %x:%x %d %2048s",
+					 &segi.start,
+					 &segi.end,
+					 &segi.flags,
+					 &segi.offset,
+					 &segi.maj,
+					 &segi.min,
+					 &segi.inode,
+					 name
+					 );
+		segi.file = std::string(name);
+		
+		segtable.emplace_back(segi);
+		
+		
+	} while (!mapsfile.eof());
+	
+	
+}
+
+
 uint64_t SymbolTable::FindSymbolOffsetByPattern (const char* regex_pattern)
 {
 	regex_t regex;
@@ -97,27 +156,13 @@ uint64_t SymbolTable::FindSymbolOffsetByPattern (const char* regex_pattern)
 }
 
 
-std::string Process::FindExecutablePath ()
-{
-	assert (pid);
-	char exelink[1024];
-	snprintf(exelink, 1024, "/proc/%d/exe", pid);
-	char exepath[1024];
-	memset(exepath, 0, 1024);
-	readlink(exelink, exepath, 1024);
-	return std::string(exepath);
-}
-
-
 uint64_t Process::FindSymbolOffsetByPattern (const char* regex_pattern)
 {
 	char cmd[1024];
 	uint64_t result = 0L;
 
-	std::string path = FindExecutablePath();
 	if (!parsed_symtable) {
-		symtable.Parse(path);
-		parsed_symtable = true;
+		ParseSymbolTable();
 	}
 	
 	result = symtable.FindSymbolOffsetByPattern(regex_pattern);
@@ -125,48 +170,43 @@ uint64_t Process::FindSymbolOffsetByPattern (const char* regex_pattern)
 	return result;
 }
 
-
-uint64_t Process::FindSegmentByPattern (const char* regex_pattern, char* flags)
+uint64_t Process::FindSymbolAddressByPattern (const char* regex_pattern)
 {
-	uint64_t result = 0;
+	uint64_t offset = FindSymbolOffsetByPattern (regex_pattern);
+	uint64_t segment = FindSegmentByPattern(symtable.path.c_str(), "--x-");
 	
-	return result;
+	return segment + offset;
 }
 
-void Process::ParseSegments ()
+
+uint64_t Process::FindSegmentByPattern (const char* regex_pattern, const char* flags)
 {
-	char mapsfn[1024];
-	char line[2048];
-	char name[1024];
-	snprintf(mapsfn,1024,"/proc/%d/maps", pid);
+	uint64_t result = 0;
+	if (!parsed_segtable) {
+		ParseSegmentMap();
+		parsed_segtable = true;
+	}
+	std::regex reg(regex_pattern);
 
-	std::ifstream mapsfile (mapsfn);
-	assert_rune(mapsfile.good(), "Couldn't open %s", mapsfn);
+	for (auto it = segtable.begin(); it != segtable.end(); it++) {
+		SegInfo& seg = *it;
+		for (int i=0; i <= 4; i++) {
+			if (flags[i] != '-' && flags[i] != seg.flags[i]) {
+				goto keepgoing;
+			}
+		}
+		
+		if (regex_match(seg.file, reg)) {
+			result = seg.start;
+			goto end;
+		}
+		
+	keepgoing:
+		asm("nop;");
+	}
 
-	segtable.clear();
-
-	SegInfo segi;
-	do {
-		
-		mapsfile.getline(line,2048);
-		
-		sscanf(line, "%lx - %lx %s %x %*x:%*x %*d %s",
-					 &segi.start,
-					 &segi.end,
-					 &segi.flags,
-					 &segi.offset,
-					 &segi.maj,
-					 &segi.min,
-					 &segi.inode,
-					 name
-					 );
-		segi.file = std::string(name);
-		
-		segtable.emplace_back(segi);
-		
-	} while (!mapsfile.eof());
-	
-	
+ end:
+	return result;
 }
 
 
@@ -204,9 +244,7 @@ Tracee* Tracee::FindByNamePattern (const char* regex_pattern)
 	
 	regfree(&regex);
 
-	if (result == 0) {
-		throw std::runtime_error("Could not find process");
-	}
+	assert_re(result, "couldn't find process using the pattern '%s'", regex_pattern);
 	
 	return new Tracee(result);
 }
@@ -259,9 +297,9 @@ int Tracee::rbreak ()
 {
 
 	// Send interrupt
-	printf("Sending interrupt to %d.\n", pid);
+	Logger::info("Tracee::rbreak(): sending interrupt to %d.\n", pid);
 	if (ptrace(PTRACE_INTERRUPT,pid,0,0) == -1) {
-		fprintf(stderr, "Error : %s\n", strerror(errno));
+		Logger::error("Error : %s\n", strerror(errno));
 		exit(2);
 	}
 	
@@ -274,24 +312,24 @@ int Tracee::rbreak ()
 	do {
 		
 		waitpid(pid, &wstatus,0);
-		printf("Stopped: ");
+		Logger::detail("Stopped: ");
 
-		//SaveRegisters(&ur);
+		SaveRegisters(&ur);
 		
 		ptrace(PTRACE_GETSIGINFO, pid, 0, &siginfo);
 		if (WIFSTOPPED(wstatus)) {
-			printf("# STOP received. rip=0x%lx  rbp=0x%lx  rsp=0x%lx\n", ur.regs.rip, ur.regs.rbp, ur.regs.rsp);
-			printf("siginfo.si_info is 0x%lx\n", siginfo.si_code);
+			Logger::detail("# STOP received. rip=0x%lx  rbp=0x%lx  rsp=0x%lx\n", ur.regs.rip, ur.regs.rbp, ur.regs.rsp);
+			Logger::detail("siginfo.si_info is 0x%lx\n", siginfo.si_code);
 			if (WSTOPSIG(wstatus) == (SIGTRAP|0x80)) {
 				// this indicates that we're inside a syscall-enter-stop
 				syscallstops++;
-				printf("wstatus == SIGTRAP|0x80\n");
+				Logger::detail("wstatus == SIGTRAP|0x80\n");
 			} else if (WSTOPSIG(wstatus) == SIGTRAP) {
 				//syscallstops++;
-				printf("wstatus == SIGTRAP\n");
+				Logger::detail("wstatus == SIGTRAP\n");
 				// this indicates that we're inside a syscall-exit stop
 			} else {
-				printf("WSTOPSIG(wstatus) == 0x%lx\n", WSTOPSIG(wstatus));
+				Logger::detail("WSTOPSIG(wstatus) == 0x%lx\n", WSTOPSIG(wstatus));
 			}
 			if (syscallstops < 2 || ur.regs.rbp < 0x1000) {
 				ptrace(PTRACE_SYSCALL,pid,0,0);
@@ -301,7 +339,7 @@ int Tracee::rbreak ()
 			}
 		} else {
 			// exit or termination
-			fprintf(stderr, "Signal received by debugger but tracee is not stopped. Exiting.\n");
+			Logger::error("Signal received by debugger but tracee is not stopped. Exiting.\n");
 			return 1;
 		}
 

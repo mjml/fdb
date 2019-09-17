@@ -25,20 +25,15 @@ enum LogLevel {
 								FUSS,     // Unexpected condition that is part of proper execution but may indicate improper usage by the user.
 								INFO,     // Status messages that illustrate program state that can be voluminous.
 								DETAIL,   // Status messages that can be volumous in proportion to input complexity.
-								DEBUG,    // Messages that are intended to show specific information with the intent of detecting preconditions to failure.
-								DEBUG2    // The firehose.
+								DBG,    // Messages that are intended to show specific information with the intent of detecting preconditions to failure.
+								DBG2    // The firehose.
 };
-
-
-#ifndef LOGLEVEL_LIVEPARSE
-#define LOGLEVEL_LIVEPARSE 5
-#endif
 
 
 struct default_logger_traits
 {
 	constexpr static const char* name = APPNAME;
-	constexpr static int logLevel = LOGLEVEL_LIVEPARSE;
+	constexpr static int logLevel = 5;
 };
 
 
