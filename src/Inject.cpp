@@ -1,3 +1,4 @@
+#define _INJECT_CPP
 #include <stdio.h>
 #include <stdlib.h>
 #include <limits.h>
@@ -20,32 +21,39 @@
 
 #include "util/exceptions.hpp"
 #include "factinject_logger.hpp"
-#include "segment.h"
 #include "Inject.hpp"
 
 static void print_siginfo (siginfo_t* ps)
 {
-	printf("siginfo.si_signo = %d   siginfo.si_code = %d   siginfo.si_errno = %d\n",
-				 ps->si_signo, ps->si_code, ps->si_errno);
+	Logger::info("siginfo.si_signo = %d   siginfo.si_code = %d   siginfo.si_errno = %d",
+							 ps->si_signo, ps->si_code, ps->si_errno);
 }
 
 
-SymbolTable::SymbolTable (std::string& _path) 
+void SymbolTableEntry::Parse (const char* line)
+{
+	char szname[1024];
+	int c = sscanf(line, "%lx %c %1023s", &offset, &type, &szname);
+	if (c == 3) {
+		name = std::string(szname);
+	}
+}
+
+
+SymbolTable::SymbolTable (const std::string& _path) 
 	: path(_path)
 {
 	Parse(path);
 };
-
-SymbolTable::~SymbolTable () {}
 
 
 void SymbolTable::Parse (const std::string& _path)
 {
 	char cmd[1024];
 	
-	offsets.clear();
+	symbols.clear();
 	
-	snprintf(cmd, 1024, "readelf -Ws %s", _path.c_str());
+	snprintf(cmd, 1024, "nm %s", _path.c_str());
 	FILE* cmdout = popen(cmd, "r");
 
 	int r = 0;
@@ -58,6 +66,7 @@ void SymbolTable::Parse (const std::string& _path)
 		line = nullptr;
 	}
 	
+	SymbolTableEntry entry;
 	do {
 		n = 0;
 		r = getline(&line, &n, cmdout);
@@ -66,12 +75,10 @@ void SymbolTable::Parse (const std::string& _path)
 			line = nullptr;
 			continue;
 		}
-		uint64_t offset = 0;
-		char sym_name[1024];
-		sym_name[0] = 0;
-		int c = sscanf(line, "%*d: %lx %*d %*s %*s %*s %*s %1023s %*s", &offset, sym_name);
-		if (c == 2) {
-			offsets.emplace(std::string(sym_name), offset);
+		entry.type = 0;
+		entry.Parse(line);
+		if (entry.type) {
+			symbols.emplace(entry.name, entry);
 		}
 		free(line);
 		line = nullptr;
@@ -81,6 +88,69 @@ void SymbolTable::Parse (const std::string& _path)
 	pclose(cmdout);
 	
 	path = _path;
+
+	symbolTableMemo.AddSymbolTable(*this);
+}
+
+
+std::optional<uint64_t> SymbolTable::FindSymbolOffsetByPattern (const char* name_pat) const
+{
+	std::regex reg(name_pat);
+	for (auto it = symbols.begin(); it != symbols.end(); it++) {
+		if (std::regex_search(it->first, reg)) {
+			return std::optional(uint64_t(it->second.offset));
+		}
+	}
+	return std::optional<uint64_t>();
+}
+
+
+std::optional<const std::string*> SymbolTable::FindSymbolNameByPattern (const char* name_pat) const
+{
+	std::regex reg(name_pat);
+	for (auto it = symbols.begin(); it != symbols.end(); it++) {
+		if (std::regex_search(it->first, reg)) {
+			return std::optional(&it->second.name);
+		}
+	}
+	return std::optional<const std::string*>();
+}
+
+
+const SymbolTableEntry* SymbolTable::FindSymbolByPattern (const char* name_pat) const
+{
+	std::regex reg(name_pat);
+	for (auto it = symbols.begin(); it != symbols.end(); it++) {
+		if (std::regex_search(it->first, reg)) {
+			return &it->second;
+		}
+	}
+	return nullptr;
+}
+
+
+const SymbolTable*  SymbolTableMemo::FindSymbolTableByName (const std::string& pathname) const
+{
+	for (auto it = tables.begin(); it != tables.end(); it++) {
+		const std::string& s = it->first;
+		if (s == pathname) {
+			return &(it->second);
+		}
+	}
+	return nullptr;
+}
+
+
+const SymbolTable*  SymbolTableMemo::FindSymbolTableByPattern (const char* regex_pattern) const
+{
+	std::regex reg(regex_pattern);
+	for (auto it = tables.begin(); it != tables.end(); it++) {
+		const std::string& s = it->first;
+		if (regex_search(s, reg)) {
+			return &(it->second);
+		}
+	}
+	return nullptr;
 }
 
 
@@ -99,8 +169,15 @@ std::string Process::FindExecutablePath ()
 void Process::ParseSymbolTable ()
 {
 	std::string executable_path = FindExecutablePath();
-	symtable.Parse(executable_path);
-	parsed_symtable = true;
+	if (!parsed_symtab) {
+		const SymbolTable* memoized = symbolTableMemo.FindSymbolTableByName(executable_path);
+		if (memoized) {
+			symtab = *memoized;
+		} else {
+			symtab.Parse(executable_path);
+		}
+	}
+	parsed_symtab = true;
 }
 
 void Process::ParseSegmentMap ()
@@ -113,14 +190,14 @@ void Process::ParseSegmentMap ()
 	std::ifstream mapsfile (mapsfn);
 	assert_re (mapsfile.good(), "Couldn't open %s", mapsfn);
 	
-	segtable.clear();
+	segtab.clear();
 	
 	SegInfo segi;
 	do {
 		
+		mapsfile.getline(line,2047);
 		name[0] = 0;
-		mapsfile.getline(line,2048);
-		sscanf(line, "%lx - %lx %s %x %x:%x %d %2048s",
+		int c = sscanf(line, "%lx - %lx %s %x %x:%x %d %1023s",
 					 &segi.start,
 					 &segi.end,
 					 &segi.flags,
@@ -130,29 +207,13 @@ void Process::ParseSegmentMap ()
 					 &segi.inode,
 					 name
 					 );
-		segi.file = std::string(name);
-		
-		segtable.emplace_back(segi);
-		
+		if (c >= 8) {
+			segi.file = std::string(name);
+			segtab.emplace_back(segi);
+		}
 		
 	} while (!mapsfile.eof());
 	
-	
-}
-
-
-uint64_t SymbolTable::FindSymbolOffsetByPattern (const char* regex_pattern)
-{
-	regex_t regex;
-	uint64_t result = 0;
-	regcomp(&regex, regex_pattern, REG_EXTENDED);
-	for (auto it = offsets.begin(); it != offsets.end(); it++) {
-		if (!regexec(&regex, it->first.c_str(), 0, nullptr, 0)) {
-			result = it->second;
-		}
-	}
-	regfree(&regex);
-	return result;
 }
 
 
@@ -161,52 +222,66 @@ uint64_t Process::FindSymbolOffsetByPattern (const char* regex_pattern)
 	char cmd[1024];
 	uint64_t result = 0L;
 
-	if (!parsed_symtable) {
+	if (!parsed_symtab) {
 		ParseSymbolTable();
 	}
 	
-	result = symtable.FindSymbolOffsetByPattern(regex_pattern);
+	symtab.FindSymbolOffsetByPattern(regex_pattern);
 
 	return result;
 }
 
-uint64_t Process::FindSymbolAddressByPattern (const char* regex_pattern)
+uint64_t Process::FindSymbolAddressByPattern (const char* sym_pat)
 {
-	uint64_t offset = FindSymbolOffsetByPattern (regex_pattern);
-	uint64_t segment = FindSegmentByPattern(symtable.path.c_str(), "--x-");
+	uint64_t offset = FindSymbolOffsetByPattern (sym_pat);
+	const SegInfo* seg = FindSegmentByPattern(symtab.path.c_str(), "--x-");
 	
-	return segment + offset;
+	return seg->start + offset;
+}
+
+uint64_t Process::FindSymbolAddressByPattern (const char* module_pat, const char* sym_pat)
+{
+	const SegInfo* seg = FindSegmentByPattern(module_pat, "--x-");
+	assert_re(seg, "Couldn't find segment pattern '%s' in the target process!", module_pat);
+	const std::string& pathname = seg->file;
+	const SymbolTable* symtab = symbolTableMemo.FindSymbolTableByName(pathname);
+	SymbolTable mysymtab;
+	if (symtab == nullptr) {
+		mysymtab.Parse(pathname.c_str());
+		symtab = &mysymtab;
+	}
+	auto symofs = symtab->FindSymbolOffsetByPattern(sym_pat);
+	assert_re(symofs.has_value(), "Couldn't find symbol offset for pattern '%s'", sym_pat);
+	Logger::debug("segment is 0x%lx offset is 0x%lx", seg->start, symofs.value());
+	
+	return seg->start + symofs.value();	
 }
 
 
-uint64_t Process::FindSegmentByPattern (const char* regex_pattern, const char* flags)
+const SegInfo* Process::FindSegmentByPattern (const char* regex_pattern, const char* flags)
 {
-	uint64_t result = 0;
-	if (!parsed_segtable) {
+	if (!parsed_segtab) {
 		ParseSegmentMap();
-		parsed_segtable = true;
+		parsed_segtab = true;
 	}
 	std::regex reg(regex_pattern);
-
-	for (auto it = segtable.begin(); it != segtable.end(); it++) {
-		SegInfo& seg = *it;
+	
+	for (auto it = segtab.begin(); it != segtab.end(); it++) {
+		SegInfo& segi = *it;
 		for (int i=0; i <= 4; i++) {
-			if (flags[i] != '-' && flags[i] != seg.flags[i]) {
+			if (flags[i] != '-' && flags[i] != segi.flags[i]) {
 				goto keepgoing;
 			}
 		}
-		
-		if (regex_match(seg.file, reg)) {
-			result = seg.start;
-			goto end;
+		if (regex_search(segi.file, reg)) {
+			return &segi;
 		}
-		
+
 	keepgoing:
 		asm("nop;");
 	}
-
- end:
-	return result;
+	
+	return nullptr;
 }
 
 
@@ -254,13 +329,13 @@ void Tracee::Attach ()
 {
 	if (!pid) {
 		char msg[1024];
-		snprintf(msg,1024, "Error: no pid defined to attach to\n", strerror(errno));
+		snprintf(msg,1024, "Error: no pid defined to attach to", strerror(errno));
 		throw std::runtime_error(msg);
 	}
 	
 	if (ptrace(PTRACE_SEIZE,pid,0,PTRACE_O_TRACESYSGOOD) == -1) {
 		char msg[1024];
-		snprintf(msg,1024, "Error attaching to process: %s\n", strerror(errno));
+		snprintf(msg,1024, "Error attaching to process: %s", strerror(errno));
 		throw std::runtime_error(msg);
 	}
 }
@@ -297,9 +372,9 @@ int Tracee::rbreak ()
 {
 
 	// Send interrupt
-	Logger::info("Tracee::rbreak(): sending interrupt to %d.\n", pid);
+	//Logger::info("Tracee::rbreak(): sending interrupt to %d.", pid);
 	if (ptrace(PTRACE_INTERRUPT,pid,0,0) == -1) {
-		Logger::error("Error : %s\n", strerror(errno));
+		Logger::error("Error : %s", strerror(errno));
 		exit(2);
 	}
 	
@@ -312,24 +387,24 @@ int Tracee::rbreak ()
 	do {
 		
 		waitpid(pid, &wstatus,0);
-		Logger::detail("Stopped: ");
+		//Logger::detail("Stopped: ");
 
 		SaveRegisters(&ur);
 		
 		ptrace(PTRACE_GETSIGINFO, pid, 0, &siginfo);
 		if (WIFSTOPPED(wstatus)) {
-			Logger::detail("# STOP received. rip=0x%lx  rbp=0x%lx  rsp=0x%lx\n", ur.regs.rip, ur.regs.rbp, ur.regs.rsp);
-			Logger::detail("siginfo.si_info is 0x%lx\n", siginfo.si_code);
+			//Logger::detail("# STOP received. rip=0x%lx  rbp=0x%lx  rsp=0x%lx", ur.regs.rip, ur.regs.rbp, ur.regs.rsp);
+			//Logger::detail("siginfo.si_info is 0x%lx", siginfo.si_code);
 			if (WSTOPSIG(wstatus) == (SIGTRAP|0x80)) {
 				// this indicates that we're inside a syscall-enter-stop
 				syscallstops++;
-				Logger::detail("wstatus == SIGTRAP|0x80\n");
+				//Logger::detail("wstatus == SIGTRAP|0x80");
 			} else if (WSTOPSIG(wstatus) == SIGTRAP) {
 				//syscallstops++;
-				Logger::detail("wstatus == SIGTRAP\n");
+				//Logger::detail("wstatus == SIGTRAP");
 				// this indicates that we're inside a syscall-exit stop
 			} else {
-				Logger::detail("WSTOPSIG(wstatus) == 0x%lx\n", WSTOPSIG(wstatus));
+				//Logger::detail("WSTOPSIG(wstatus) == 0x%lx", WSTOPSIG(wstatus));
 			}
 			if (syscallstops < 2 || ur.regs.rbp < 0x1000) {
 				ptrace(PTRACE_SYSCALL,pid,0,0);
@@ -339,7 +414,7 @@ int Tracee::rbreak ()
 			}
 		} else {
 			// exit or termination
-			Logger::error("Signal received by debugger but tracee is not stopped. Exiting.\n");
+			Logger::error("Signal received by debugger but tracee is not stopped. Exiting.");
 			return 1;
 		}
 
@@ -357,12 +432,12 @@ int Tracee::rcont ()
 }
 
 
-int Tracee::GrabText (int size, void* rip, uint8_t* buffer)
+int Tracee::GrabText (int size, void* addr, uint8_t* buffer)
 {
 	assert (size % sizeof(long) == 0);
 
 	for (int i=0; i < size; i += sizeof(long)) {
-		long peeked = ptrace(PTRACE_PEEKTEXT, pid, (uint64_t)(rip)+i, NULL);
+		long peeked = ptrace(PTRACE_PEEKTEXT, pid, (uint64_t)(addr)+i, NULL);
 		if (peeked == -1) {
 			return 1;
 		}
@@ -462,18 +537,12 @@ void* Tracee::Inject_dlopen (const char* shlib_path, uint32_t flags)
 	const int bufsz = 512;
 	uint8_t buffer[bufsz];
 	uint8_t saved[bufsz];
-	const int strsize = 512;
-	char unitpath[strsize];
-	char symbol[strsize];
 	struct user ur;
 	void *rip, *rip2;
 	void *rbp;
-	unsigned long segaddr, segaddr2;
-	unsigned long segoffset;
+	unsigned long segaddr;
 	unsigned long symofs;
 	uint8_t r;
-	unsigned long factsegaddr, factsegaddr2;
-	unsigned long factsegsize;
 	
 	// create the injected blob
 	memset(buffer, 0, bufsz);
@@ -488,63 +557,66 @@ void* Tracee::Inject_dlopen (const char* shlib_path, uint32_t flags)
 	*(int32_t*)(buffer+arg2_offset) = flags;
 	
 	// amend the blob with the sum of the segment address and symbol address of the target function
-	find_segment_address_regex(pid, "/libdl", unitpath, strsize, &segaddr, &segaddr2, &segoffset);
-  find_symbol_offset_regex(unitpath, "dlopen@@", symbol, strsize, &symofs);
-	*((uint64_t*)(buffer+funcaddr_offset)) = segaddr + segoffset + symofs;
-	printf("dlopen is located at 0x%lx\n", segaddr + segoffset + symofs);
+	uint64_t symaddr = FindSymbolAddressByPattern("/libdl", "__dlopen");
+	
+	*((uint64_t*)(buffer+funcaddr_offset)) = symaddr;
+	Logger::detail("dlopen is located at 0x%lx", symaddr);
 	
 	// save remote registers and existing rip text
 	if (r = SaveRegisters(&ur)) {
-		fprintf(stderr, "Problem saving remote registers: %d\n", r);
+		Logger::error("Problem saving remote registers: %d", r);
 		return (void*)1;
 	}
 	rip = (void*)ur.regs.rip;
 	if (r = GrabText (bufsz, rip, saved)) {
-		fprintf(stderr, "Problem grabbing text: %d\n", r);
+		Logger::error("Problem grabbing text: %d", r);
 		return (void*)2;
 	}
-
+	
 	// inject the blob
-	printf("Injecting codetext...\n");
+	Logger::print("Injecting codetext...");
 	InjectText (bufsz, rip, buffer);
 	
 	// continue the tracee
 	if (ptrace(PTRACE_CONT, pid, 0, 0) == -1) {
-		fprintf(stderr,"Couldn't continue the tracee.\n");
+		Logger::error("Couldn't continue the tracee.");
 		return (void*)3;
 	}
 
 	// wait for the tracee to stop
 	int wstatus;
 	siginfo_t siginfo;
-	printf("Waiting for completion...");
+	Logger::info("Waiting for completion...");
 	waitpid(pid, &wstatus, 0);
 	if (WIFSTOPPED(wstatus)) {
-		printf("Stopped. WSTOPSIG(wstatus) = %d\n", WSTOPSIG(wstatus));
+		Logger::info("Stopped. WSTOPSIG(wstatus) = %d", WSTOPSIG(wstatus));
 		ptrace(PTRACE_GETSIGINFO,pid,0,&siginfo);
-		print_siginfo(&siginfo);
+		//print_siginfo(&siginfo);
 	}
 	
 	// check the return code
 	struct user ur2;
 	if (r = SaveRegisters(&ur2)) {
-		fprintf(stderr, "Problem saving remote registers: %d\n", r);
+		Logger::error("Problem saving remote registers: %d", r);
 		return (void*)4;
 	}
 
-	printf("rax value: 0x%lx\n", ur2.regs.rax);
-	printf("rip difference: 0x%lx - %lx = %lu\n", ur2.regs.rip, ur.regs.rip, ur2.regs.rip - ur.regs.rip);
+	Logger::detail("rax value: 0x%lx", ur2.regs.rax);
+	if (ur2.regs.rax == 0) {
+		Logger::warning("dlopen FAILED");
+	}
+	Logger::detail("rip difference: 0x%lx - %lx = %lu", ur2.regs.rip, ur.regs.rip, ur2.regs.rip - ur.regs.rip);
 	
 	// restore tracee rip text and registers
-	printf("Restoring previous codetext\n");
+	Logger::info("Restoring previous codetext");
 	if (r = InjectText(bufsz, rip, saved)) {
-		fprintf(stderr, "Problem injecting saved codetext: %d\n", r);
+		Logger::error("Problem injecting saved codetext: %d", r);
 		return (void*)5;
 	}
 
-	printf("Restoring previous registers\n");
+	Logger::info("Restoring previous registers");
 	if (r =	RestoreRegisters (&ur)) {
-		fprintf(stderr, "Problem restoring saved registers: %d\n", r);
+		Logger::error("Problem restoring saved registers: %d", r);
 		return (void*)6;
 	}
 	
@@ -559,22 +631,22 @@ void* Tracee::Inject_dlsym (const char* szsymbol)
 	const int bufsz = 512;
 	uint8_t buffer[bufsz];
 	uint8_t saved[bufsz];
-	const int strsize = 512;
-	char unitpath[strsize];
-	char symbol[strsize];
 	struct user ur;
 	void *rip, *rip2;
 	void *rbp;
-	unsigned long segaddr, segaddr2;
-	unsigned long segoffset;
-	unsigned long symofs;
 	uint8_t r;
-	unsigned long factsegaddr, factsegaddr2;
-	unsigned long factsegsize;
 
 	// find dlsym's address and name
-	find_segment_address_regex(pid, "/libdl", unitpath, strsize, &segaddr, &segaddr2, &segoffset);
-  find_symbol_offset_regex(unitpath, "dlsym@@", symbol, strsize, &symofs);
+	auto seg = FindSegmentByPattern("/libdl", "--x-");
+	assert_re(seg, "Couldn't find libdl segment in process space.");
+	const SymbolTable* symtab = symbolTableMemo.FindSymbolTableByName(seg->file);
+	SymbolTable mysymtab;
+	if (!symtab) {
+		mysymtab.Parse(seg->file);
+		symtab = &mysymtab;
+	}
+	auto symbol = symtab->FindSymbolByPattern("__dlsym");
+	assert_re(symbol, "Couldn't find symbol offset for dlsym()");
 	
 	// create the injected blob
 	memset(buffer, 0, bufsz);
@@ -584,40 +656,40 @@ void* Tracee::Inject_dlsym (const char* szsymbol)
 				 "\xff\xd0"                                  // call   *%rax
 				 "\xcc"                                      // int    3
 				 , 20);
-	strncpy((char*)((uint8_t*)buffer + arg1_offset), symbol, bufsz-arg1_offset);
+	strncpy((char*)((uint8_t*)buffer + arg1_offset), symbol->name.c_str(), bufsz-arg1_offset);
 	
 	// amend the blob with the sum of the segment address and symbol address of the target function
-	*((uint64_t*)(buffer+funcaddr_offset)) = segaddr + segoffset + symofs;
-	printf("dlsym is located at 0x%lx\n", segaddr + segoffset + symofs);
+	*((uint64_t*)(buffer+funcaddr_offset)) = seg->start + symbol->offset;
+	Logger::info("dlsym (%s) is located at 0x%lx", symbol->name, seg->start + symbol->offset);
 	
 	// save remote registers and existing rip text
 	if (r = SaveRegisters(&ur)) {
-		fprintf(stderr, "Problem saving remote registers: %d\n", r);
+		Logger::error("Problem saving remote registers: %d", r);
 		return (void*)1;
 	}
 	rip = (void*)ur.regs.rip;
 	if (r = GrabText (bufsz, rip, saved)) {
-		fprintf(stderr, "Problem grabbing text: %d\n", r);
+		Logger::error("Problem grabbing text: %d", r);
 		return (void*)2;
 	}
 
 	// inject the blob
-	printf("Injecting codetext...\n");
+	Logger::info("Injecting codetext...");
 	InjectText (bufsz, rip, buffer);
 	
 	// continue the tracee
 	if (ptrace(PTRACE_CONT, pid, 0, 0) == -1) {
-		fprintf(stderr,"Couldn't continue the tracee.\n");
+		Logger::error("Couldn't continue the tracee.");
 		return (void*)3;
 	}
 
 	// wait for the tracee to stop
 	int wstatus;
 	siginfo_t siginfo;
-	printf("Waiting for completion...");
+	Logger::info("Waiting for completion...");
 	waitpid(pid, &wstatus, 0);
 	if (WIFSTOPPED(wstatus)) {
-		printf("Stopped. WSTOPSIG(wstatus) = %d\n", WSTOPSIG(wstatus));
+		Logger::info("Stopped. WSTOPSIG(wstatus) = %d", WSTOPSIG(wstatus));
 		ptrace(PTRACE_GETSIGINFO,pid,0,&siginfo);
 		print_siginfo(&siginfo);
 	}
@@ -625,23 +697,23 @@ void* Tracee::Inject_dlsym (const char* szsymbol)
 	// check the return code
 	struct user ur2;
 	if (r = SaveRegisters(&ur2)) {
-		fprintf(stderr, "Problem saving remote registers: %d\n", r);
+		Logger::error("Problem saving remote registers: %d", r);
 		return (void*)4;
 	}
 
-	printf("rax value: 0x%lx\n", ur2.regs.rax);
-	printf("rip difference: 0x%lx - %lx = %lu\n", ur2.regs.rip, ur.regs.rip, ur2.regs.rip - ur.regs.rip);
+	Logger::detail("rax value: 0x%lx", ur2.regs.rax);
+	Logger::detail("rip difference: 0x%lx - %lx = %lu\n", ur2.regs.rip, ur.regs.rip, ur2.regs.rip - ur.regs.rip);
 	
 	// restore tracee rip text and registers
-	printf("Restoring previous codetext\n");
+	Logger::detail("Restoring previous codetext");
 	if (r = InjectText(bufsz, rip, saved)) {
-		fprintf(stderr, "Problem injecting saved codetext: %d\n", r);
+		Logger::error("Problem injecting saved codetext: %d", r);
 		return (void*)5;
 	}
-
-	printf("Restoring previous registers\n");
+	
+	Logger::detail("Restoring previous registers");
 	if (r =	RestoreRegisters (&ur)) {
-		fprintf(stderr, "Problem restoring saved registers: %d\n", r);
+		Logger::error("Problem restoring saved registers: %d", r);
 		return (void*)6;
 	}
 
@@ -655,22 +727,13 @@ void* Tracee::Inject_dlerror ()
 	const int bufsz = 512;
 	uint8_t buffer[bufsz];
 	uint8_t saved[bufsz];
-	const int strsize = 512;
-	char unitpath[strsize];
-	char symbol[strsize];
 	struct user ur;
 	void *rip, *rip2;
 	void *rbp;
-	unsigned long segaddr, segaddr2;
-	unsigned long segoffset;
-	unsigned long symofs;
 	uint8_t r;
-	unsigned long factsegaddr, factsegaddr2;
-	unsigned long factsegsize;
-
+	
 	// find dlsym's address and name
-	find_segment_address_regex(pid, "/libdl", unitpath, strsize, &segaddr, &segaddr2, &segoffset);
-  find_symbol_offset_regex(unitpath, "dlerror@@", symbol, strsize, &symofs);
+	uint64_t symaddr = FindSymbolAddressByPattern("/libdl", "__dlerror");
 	
 	// create the injected blob
 	memset(buffer, 0, bufsz);
@@ -681,67 +744,76 @@ void* Tracee::Inject_dlerror ()
 				 , 13);
 	
 	// amend the blob with the sum of the segment address and symbol address of the target function
-	*((uint64_t*)(buffer+funcaddr_offset)) = segaddr + segoffset + symofs;
-	printf("dlerror is located at 0x%lx\n", segaddr + segoffset + symofs);
+	*((uint64_t*)(buffer+funcaddr_offset)) = symaddr;
+	Logger::info("dlerror is located at 0x%lx", symaddr);
 	
 	// save remote registers and existing rip text
 	if (r = SaveRegisters(&ur)) {
-		fprintf(stderr, "Problem saving remote registers: %d\n", r);
+		Logger::error("Problem saving remote registers: %d", r);
 		return (void*)1;
 	}
 	rip = (void*)ur.regs.rip;
 	if (r = GrabText (bufsz, rip, saved)) {
-		fprintf(stderr, "Problem grabbing text: %d\n", r);
+		Logger::error("Problem grabbing text: %d", r);
 		return (void*)2;
 	}
 
 	// inject the blob
-	printf("Injecting codetext...\n");
+	Logger::detail("Injecting codetext...");
 	InjectText (bufsz, rip, buffer);
 	
 	// continue the tracee
 	if (ptrace(PTRACE_CONT, pid, 0, 0) == -1) {
-		fprintf(stderr,"Couldn't continue the tracee.\n");
+		Logger::error("Couldn't continue the tracee.\n");
 		return (void*)3;
 	}
 
 	// wait for the tracee to stop
 	int wstatus;
 	siginfo_t siginfo;
-	printf("Waiting for completion...");
+	Logger::detail("Waiting for completion...");
 	waitpid(pid, &wstatus, 0);
 	if (WIFSTOPPED(wstatus)) {
-		printf("Stopped. WSTOPSIG(wstatus) = %d\n", WSTOPSIG(wstatus));
+		Logger::detail("Stopped. WSTOPSIG(wstatus) = %d", WSTOPSIG(wstatus));
 		ptrace(PTRACE_GETSIGINFO,pid,0,&siginfo);
-		print_siginfo(&siginfo);
+		//print_siginfo(&siginfo);
 	}
 	
 	// check the return code
 	struct user ur2;
 	if (r = SaveRegisters(&ur2)) {
-		fprintf(stderr, "Problem saving remote registers: %d\n", r);
+		Logger::error("Problem saving remote registers: %d", r);
 		return (void*)4;
 	}
 
-	printf("rax value: 0x%lx\n", ur2.regs.rax);
-	printf("rip difference: 0x%lx - %lx = %lu\n", ur2.regs.rip, ur.regs.rip, ur2.regs.rip - ur.regs.rip);
+	uint64_t result = ur2.regs.rax;
+	Logger::debug("rax value: 0x%lx", ur2.regs.rax);
+	Logger::debug("rip difference: 0x%lx - %lx = %lu", ur2.regs.rip, ur.regs.rip, ur2.regs.rip - ur.regs.rip);
 	
+	// peek the block of text that contains the error into a big buffer
+	char dlerrmsg[512];
+	if (result) {
+		GrabText(512,(void*)(result),(uint8_t*)(dlerrmsg));
+		dlerrmsg[511] = 0;
+		Logger::warning("dlerror returned: %s", dlerrmsg);
+	}
+
 	// restore tracee rip text and registers
-	printf("Restoring previous codetext\n");
+	Logger::detail("Restoring previous codetext");
 	if (r = InjectText(bufsz, rip, saved)) {
-		fprintf(stderr, "Problem injecting saved codetext: %d\n", r);
+		Logger::error("Problem injecting saved codetext: %d", r);
 		return (void*)5;
 	}
 
-	printf("Restoring previous registers\n");
+	Logger::detail("Restoring previous registers");
 	if (r =	RestoreRegisters (&ur)) {
-		fprintf(stderr, "Problem restoring saved registers: %d\n", r);
+		Logger::error("Problem restoring saved registers: %d", r);
 		return (void*)6;
 	}
 
-	printf("Continuing tracee...\n");
+	Logger::info("Continuing tracee...");
 	if (ptrace(PTRACE_CONT, pid, 0, 0) == -1) {
-		fprintf(stderr, "Couldn't continue the tracee after running code injection.\n");
+		Logger::error("Couldn't continue the tracee after running code injection.");
 		return (void*)7;
 	}
 
@@ -752,3 +824,4 @@ void Tracee::Kill (int signal)
 {
 	kill(pid, signal);
 }
+

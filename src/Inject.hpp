@@ -5,6 +5,11 @@
 #include <map>
 #include <string>
 
+#ifndef _INJECT_CPP
+#define EXTERN extern
+#else
+#define EXTERN
+#endif
 
 struct Tracee;
 
@@ -33,21 +38,47 @@ struct BreakpointMgr
 	static Breakpoint& FindBreakpoint (uint64_t rip);
 };
 
+struct SymbolTableEntry
+{
+	uint64_t    offset;
+	char        type;   // man nm
+	std::string name;
+	SymbolTableEntry() : offset(0), type(0) {}
+	void Parse (const char* line);
+};
+
 
 struct SymbolTable
 {
 	std::string path;
-	std::map<std::string,int> offsets;
+	std::map<std::string,SymbolTableEntry> symbols;
 
 	SymbolTable () {}
-	SymbolTable (std::string& path);
-	~SymbolTable ();
+	SymbolTable (const std::string& path);
+	~SymbolTable () {}
 
-	uint64_t FindSymbolOffsetByPattern (const char* regex_pattern);
-
+	std::optional<uint64_t>            FindSymbolOffsetByPattern (const char* name_pat) const;
+	std::optional<const std::string*>  FindSymbolNameByPattern (const char* name_pat) const;
+	const SymbolTableEntry*            FindSymbolByPattern (const char* name_pat) const;
+	
 	void Parse (const std::string& _path);
 	
 };
+
+struct SymbolTableMemo
+{
+	std::map<std::string, SymbolTable> tables;
+
+	SymbolTableMemo () {}
+	~SymbolTableMemo () {};
+
+	void AddSymbolTable (const SymbolTable& table) { tables.insert(std::pair(table.path, table)); }
+	void RemoveSymbolTable (const SymbolTable& table) { tables.erase(tables.find(table.path)); }
+	const SymbolTable* FindSymbolTableByName (const std::string& pathname) const;
+	const SymbolTable* FindSymbolTableByPattern (const char* regex) const;
+};
+
+EXTERN SymbolTableMemo symbolTableMemo;
 
 struct SegInfo
 {
@@ -76,13 +107,13 @@ struct SegInfo
 struct Process
 {
 	int pid;
-	bool parsed_symtable;
-	SymbolTable symtable;
-	bool parsed_segtable;
-	std::vector<SegInfo> segtable;
+	bool parsed_symtab;
+	SymbolTable symtab;
+	bool parsed_segtab;
+	std::vector<SegInfo> segtab;
 	
-	Process () : pid(0), parsed_symtable(false), parsed_segtable(false), segtable(500) {}
-	Process (int _pid) : pid(_pid), parsed_symtable(false), parsed_segtable(false), segtable(500) {}
+	Process () : pid(0), parsed_symtab(false), parsed_segtab(false), segtab(500) {}
+	Process (int _pid) : pid(_pid), parsed_symtab(false), parsed_segtab(false), segtab(100) {}
 	~Process () {}
 	
 	std::string FindExecutablePath ();
@@ -97,7 +128,7 @@ struct Process
 
 	uint64_t FindSymbolAddressByPattern (const char* pat_symbol, const char* module);
 	
-	uint64_t FindSegmentByPattern (const char* regex_pattern, const char* flags);
+	const SegInfo* FindSegmentByPattern (const char* regex_pattern, const char* flags);
 	
 };
 
@@ -122,9 +153,9 @@ struct Tracee : public Process
 
 	int RestoreRegisters (struct user* ur);
 
-	int GrabText (int size, void* rip, uint8_t* buffer);
+	int GrabText (int size, void* addr, uint8_t* buffer);
 
-	int InjectText (int size, void* rip, const uint8_t* buffer);
+	int InjectText (int size, void* addr, const uint8_t* buffer);
 
 	int InjectAndRunText (int size, const uint8_t* text);
 	
@@ -136,3 +167,4 @@ struct Tracee : public Process
 	
 };
 
+#undef EXTERN

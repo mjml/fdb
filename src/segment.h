@@ -1,9 +1,13 @@
 #pragma once
 
-#ifdef __cplusplus
-#define EXTERN extern "C"
+#ifndef _SEGMENT_C
+#  ifdef __cplusplus
+#    define EXTERN extern "C"
+#  else
+#    define EXTERN extern
+#  endif
 #else
-#define EXTERN extern
+#   define EXTERN
 #endif
 
 
@@ -12,3 +16,4 @@ EXTERN long find_segment_address_regex (int pid, const char* unitpath_regex, cha
 EXTERN long find_symbol_offset_regex (const char* unitpath, const char* symbol_regex, char* sname, int nsname,
 																			unsigned long* poffset);
 
+#undef EXTERN

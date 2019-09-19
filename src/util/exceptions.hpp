@@ -24,5 +24,14 @@ inline void assert_e (bool condition, const char* fmt, ...)
 
 inline void assert_re (bool condition, const char* fmt, ...)
 {
-	assert_e<std::runtime_error> (condition, fmt);
+	if (!DEBUG || condition) return;
+	
+	char msg[4096];
+	va_list ap;
+
+	va_start(ap,fmt);
+	vsnprintf(msg,4096,fmt,ap);
+	va_end(ap);
+
+	throw std::runtime_error(msg);
 }

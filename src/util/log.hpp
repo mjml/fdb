@@ -50,6 +50,10 @@ public:
 	static void initialize ();
 	
 	static void finalize ();
+
+	static void debug2 (const char* fmt, ...);
+
+	static void debug (const char* fmt, ...);
 	
 	static void detail (const char* fmt, ...);
 	
@@ -119,6 +123,22 @@ inline void Log<logger_traits>::ezprint (const char* fmt, ...)
 	if (fflush(logfile)) {
 		throw errno_runtime_error;
 	}
+}
+
+
+template<class logger_traits>
+inline void Log<logger_traits>::debug2 (const char* fmt, ...)
+{
+	if (logger_traits::logLevel < LogLevel::DBG2) return;
+	ezprint(fmt);
+}
+
+
+template<class logger_traits>
+inline void Log<logger_traits>::debug (const char* fmt, ...)
+{
+	if (logger_traits::logLevel < LogLevel::DBG) return;
+	ezprint(fmt);
 }
 
 

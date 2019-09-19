@@ -52,7 +52,7 @@ int main (int argc, char* argv[])
 	// Inject self
 	Logger::info("Inject current executable into tracee.");
 	factorio->rbreak();
-	factorio->Inject_dlopen("/home/joya/localdev/factinject/factinject", RTLD_NOW | RTLD_GLOBAL);
+	factorio->Inject_dlopen("/home/joya/localdev/factinject/src/factinject", RTLD_NOW | RTLD_GLOBAL);
 	Logger::info("Done.");
 	factorio->rcont();
 	sleep(1);
@@ -65,11 +65,12 @@ int main (int argc, char* argv[])
 	factorio->rcont();
 	
 	// Trap a Lua function in order to find Lua_context*
+	/*
 	factorio->rbreak();
 	factorio->ParseSymbolTable();
 	factorio->ParseSegmentMap();
 	factorio->rcont();
-	
+	*/
 	
 	// spinwait
 	while (1) {
