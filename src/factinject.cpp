@@ -82,6 +82,8 @@ int main (int argc, char* argv[])
 	delete factorio;
 
 	Logger::finalize();
+	MainLogFileSink::finalize();
+	StdioSink::finalize();
 	
 	return 0;
 }

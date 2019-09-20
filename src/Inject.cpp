@@ -246,7 +246,7 @@ uint64_t Process::FindSymbolAddressByPattern (const char* module_pat, const char
 	assert_re(seg, "Couldn't find segment pattern '%s' in the target process!", module_pat);
 	const std::string& pathname = seg->file;
 	const SymbolTable* symtab = symbolTableMemo.FindSymbolTableByName(pathname);
-	SymbolTable mysymtab;
+	SymbolTable mysymtab; 
 	if (symtab == nullptr) {
 		mysymtab.Parse(pathname.c_str());
 		symtab = &mysymtab;
@@ -781,7 +781,7 @@ void* Tracee::Inject_dlerror ()
 	}
 	
 	// check the return code
-	struct user ur2;
+	struct user ur2; 
 	if (r = SaveRegisters(&ur2)) {
 		Logger::error("Problem saving remote registers: %d", r);
 		return (void*)4;
@@ -792,8 +792,8 @@ void* Tracee::Inject_dlerror ()
 	Logger::debug("rip difference: 0x%lx - %lx = %lu", ur2.regs.rip, ur.regs.rip, ur2.regs.rip - ur.regs.rip);
 	
 	// peek the block of text that contains the error into a big buffer
-	char dlerrmsg[512];
 	if (result) {
+		char dlerrmsg[512];
 		GrabText(512,(void*)(result),(uint8_t*)(dlerrmsg));
 		dlerrmsg[511] = 0;
 		Logger::warning("dlerror returned: %s", dlerrmsg);

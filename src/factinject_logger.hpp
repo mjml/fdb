@@ -30,9 +30,11 @@ typedef Log<LOGLEVEL_FACTINJECT,applogname,StdioSink,MainLogFileSink> Logger;
 //   but with their own compile-time / runtime level. 
 //
 // Ex:
-//   typedef Log<LOGLEVEL_FEAT, "feat", Logger>  FeatLog;
-//   FeatLog::level = LogLevel::DBG2;
-//   FeatLog::info("Feature 1 begins");
+//   constexpr const char featurename[] = "myfeature";
+//   EXTERN template class Log<LOGLEVEL_MYFEATURE,featurename, Logger>;
+//   typedef Log<LOGLEVEL_MYFEATURE,featurename,Logger>  MyFeatureLog;
+//   ...
+//   MyFeatureLog::info("Feature 1 begin");
 
 
 #undef EXTERN

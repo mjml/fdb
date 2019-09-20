@@ -65,6 +65,7 @@ protected:
 	
 public:
 	static void initialize () {}
+
 	static void finalize () {}
 
 	template<int Lvl, typename...Ps> static void log_at_level (const char* fmt, Ps...ps);
@@ -148,5 +149,3 @@ inline void Log<Level,Name,Sinks...>::log_at_level (const char* fmt, Ps...ps)
 	if (level < Lvl) return;
 	fmtprint(Lvl, fmt, ps...);
 }
-
-
