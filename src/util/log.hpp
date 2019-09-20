@@ -12,9 +12,6 @@
 #include <stdexcept>
 #include "util/errno_exception.hpp"
 
-#ifndef APPNAME
-#define APPNAME "app"
-#endif
 
 enum LogLevel {
 								NONE = 0,
@@ -23,181 +20,133 @@ enum LogLevel {
 								WARNING,  // An invariant may be breached, but program state is OK and the user operation will succeed.
 								PRINT,    // Status messages that record nominal execution but that is neither voluminous nor proportional to input complexity.
 								FUSS,     // Unexpected condition that is part of proper execution but may indicate improper usage by the user.
-								INFO,     // Status messages that illustrate program state that can be voluminous.
+								INFO,     // Status messages that are not volumous in proportion to input complexity.
 								DETAIL,   // Status messages that can be volumous in proportion to input complexity.
 								DBG,    // Messages that are intended to show specific information with the intent of detecting preconditions to failure.
 								DBG2    // The firehose.
 };
 
 
-struct default_logger_traits
+template<typename...> struct SinkWriters { 	};
+
+template<typename First, typename...S>
+struct SinkWriters<First,S...>
 {
-	constexpr static const char* name = APPNAME;
-	constexpr static int logLevel = 5;
+	static void write_to_sinks (const char* szstr, int size)
+	{
+		First::write(szstr,size);
+		SinkWriters<S...>::write_to_sinks(szstr,size);
+	}
+};
+
+template<typename Last>
+struct SinkWriters<Last>
+{
+	static void write_to_sinks (const char* szstr, int size)
+	{
+		Last::write(szstr,size);
+	}
 };
 
 
-template <class logger_traits = default_logger_traits>
+template<int Level, const char* Name, typename...Sinks>
 struct Log
 {
-	static FILE* logfile;
+	inline static int level = Level;
 	
 protected:
-	static void ezprint (const char* fmt, ...);
+	static void write (const char* szstr, int size)
+	{
+		SinkWriters<Sinks...>::write_to_sinks(szstr,size);
+	}
+
+	template<typename...Ps>
+	static void fmtprint (int lvl, const char* fmt, Ps...ps);
 	
 public:
+	static void initialize () {}
+	static void finalize () {}
 
-	static void initialize ();
-	
-	static void finalize ();
-
-	static void debug2 (const char* fmt, ...);
-
-	static void debug (const char* fmt, ...);
-	
-	static void detail (const char* fmt, ...);
-	
-	static void info (const char* fmt, ...);
-
-	static void print (const char* fmt, ...);
-
-	static void fuss (const char* fmt, ...);
-	
-	static void warning (const char* fmt, ...);
-	
-	static void error (const char* fmt, ...);
-	
-	static void critical (const char* fmt, ...);
+	template<int Lvl, typename...Ps> static void log_at_level (const char* fmt, Ps...ps);
+	template<typename...Ps> static void debug2 (const char* fmt, Ps...ps) { log_at_level<LogLevel::DBG2,Ps...> (fmt,ps...); }
+	template<typename...Ps> static void debug (const char* fmt, Ps...ps)  { log_at_level<LogLevel::DBG, Ps...> (fmt,ps...); }
+	template<typename...Ps> static void detail (const char* fmt, Ps...ps) { log_at_level<LogLevel::DETAIL,Ps...> (fmt,ps...); }
+	template<typename...Ps> static void info (const char* fmt, Ps...ps)   { log_at_level<LogLevel::INFO,Ps...> (fmt,ps...); }
+  template<typename...Ps> static void print (const char* fmt, Ps...ps)  { log_at_level<LogLevel::PRINT,Ps...> (fmt,ps...); }
+	template<typename...Ps>	static void fuss (const char* fmt, Ps...ps)   { log_at_level<LogLevel::FUSS,Ps...> (fmt,ps...); }
+  template<typename...Ps> static void warning (const char* fmt, Ps...ps) { log_at_level<LogLevel::WARNING,Ps...> (fmt,ps...); }
+	template<typename...Ps> static void error (const char* fmt, Ps...ps)  { log_at_level<LogLevel::ERROR,Ps...> (fmt,ps...); }
+	template<typename...Ps> static void critical (const char* fmt, Ps...ps) { log_at_level<LogLevel::CRITICAL,Ps...> (fmt,ps...); }
 	
 };
 
 
+template<int Level, const char* Name>
+struct Log<Level,Name,FILE>
+{
+	inline static int level;
+	inline static FILE* file;
+	static void initialize_with_filename(const std::string& filename);
+	static void initialize_with_handle(FILE* fh) { file = fh; }
+	static void finalize();
+	static void write (const char* szstr, int size);
+};
 
-template <class logger_traits>
-FILE* Log<logger_traits>::logfile;
 
-
-template<class logger_traits>
-void Log<logger_traits>::initialize ()
+template<int Level, const char* Name>
+void Log<Level, Name, FILE>::initialize_with_filename (const std::string& filename)
 {
 	using namespace std;
-	pid_t mypid = getpid();
-	stringstream sstrfn;
-	stringstream sstrdir;
-	sstrdir << "/tmp/" << logger_traits::name;
-	mkdir(sstrdir.str().c_str(),S_IWUSR|S_IRUSR|S_IXUSR);
-	sstrfn << "/tmp/" << logger_traits::name << "/log";
-	logfile = fopen(sstrfn.str().c_str(), "w+");
-	if (!logfile) { throw errno_exception(std::runtime_error); }
+	file = fopen(filename.c_str(), "w+");
+	if (!file) { throw errno_exception(std::runtime_error); }
 }
 
 
-template<class logger_traits>
-inline void Log<logger_traits>::finalize ()
+template<int Level, const char* Name>
+void Log<Level, Name, FILE>::finalize ()
 {
-	assert(logfile != nullptr);
-	if (!fclose(logfile)) { throw errno_exception(std::runtime_error); }
+	assert(file != nullptr);
+	if (!fclose(file)) { throw errno_exception(std::runtime_error); }
 }
 
 
-template<class logger_traits>
-inline void Log<logger_traits>::ezprint (const char* fmt, ...)
+template<int Level, const char* Name>
+inline void Log<Level, Name, FILE>::write (const char* szstr, int size)
 {
-	va_list ap;
-	va_start(ap,fmt);
+	if (!fwrite(szstr, size, 1, file)) {
+		throw errno_runtime_error;
+	}
+	if (!fputc('\n',file)) {
+		throw errno_runtime_error;
+	}
+	if (fflush(file)) {
+		throw errno_runtime_error;
+	}
+}
+
+
+template<int Level, const char* Name, typename...Sinks>
+template<typename...Ps>
+inline void Log<Level, Name, Sinks...>::fmtprint (int lvl, const char* fmt, Ps...ps)
+{
 	char entry[1024];
 	char msg[960];
-	int chrs = vsnprintf(msg,960,fmt,ap);
-	va_end(ap);
+	int chrs = snprintf(msg,960,fmt,ps...);
 	
 	struct timespec ts;
 	clock_gettime(CLOCK_MONOTONIC_COARSE, &ts); 
-	chrs = snprintf(entry, 1024,"[%s][%ld.%ld] %s", logger_traits::name, ts.tv_sec, ts.tv_nsec, msg);
+	chrs = snprintf(entry, 1024,"%ld.%06ld [%s-%d] %s", ts.tv_sec, ts.tv_nsec/1000, Name, lvl, msg);
 	
-	if (!fwrite(entry,1,chrs,logfile)) {
-		throw errno_runtime_error;
-	}
-	if (!fputc('\n',logfile)) {
-		throw errno_runtime_error;
-	}
-	if (fflush(logfile)) {
-		throw errno_runtime_error;
-	}
+	write(entry,chrs);
 }
 
-
-template<class logger_traits>
-inline void Log<logger_traits>::debug2 (const char* fmt, ...)
+template<int Level, const char* Name, typename...Sinks>
+template<int Lvl, typename...Ps>
+inline void Log<Level,Name,Sinks...>::log_at_level (const char* fmt, Ps...ps)
 {
-	if (logger_traits::logLevel < LogLevel::DBG2) return;
-	ezprint(fmt);
+	if (Level < Lvl) return;
+	if (level < Lvl) return;
+	fmtprint(Lvl, fmt, ps...);
 }
 
 
-template<class logger_traits>
-inline void Log<logger_traits>::debug (const char* fmt, ...)
-{
-	if (logger_traits::logLevel < LogLevel::DBG) return;
-	ezprint(fmt);
-}
-
-
-template<class logger_traits>
-inline void Log<logger_traits>::detail (const char* fmt, ...)
-{
-	if (logger_traits::logLevel < LogLevel::DETAIL) return;
-	ezprint(fmt);
-}
-
-
-template<class logger_traits>
-inline void Log<logger_traits>::info (const char* fmt, ...)
-{
-	if (logger_traits::logLevel < LogLevel::INFO) return;
-	ezprint(fmt);	
-}
-
-
-template<class logger_traits>
-inline void Log<logger_traits>::print (const char* fmt, ...)
-{
-	if (logger_traits::logLevel < LogLevel::PRINT) return;
-	ezprint(fmt);
-}
-
-
-template<class logger_traits>
-inline void Log<logger_traits>::fuss (const char* fmt, ...)
-{
-	if (logger_traits::logLevel < LogLevel::FUSS) return;
-	ezprint(fmt);	
-}
-
-
-template<class logger_traits>
-inline void Log<logger_traits>::warning (const char* fmt, ...)
-{
-	if (logger_traits::logLevel < LogLevel::WARNING) return;
-	ezprint(fmt);	
-}
-
-
-template<class logger_traits>
-inline void Log<logger_traits>::error (const char* fmt, ...)
-{
-	if (logger_traits::logLevel < LogLevel::ERROR) return;
-	ezprint(fmt);	
-}
-
-
-template<class logger_traits>
-inline void Log<logger_traits>::critical (const char* fmt, ...)
-{
-	if (logger_traits::logLevel < LogLevel::CRITICAL) return;
-	ezprint(fmt);	
-}
-
-
-
-// Our core application logger, a singleton.
-typedef Log<> log;

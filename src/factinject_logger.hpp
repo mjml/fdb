@@ -1,34 +1,38 @@
 #pragma once
 
 #include "util/log.hpp"
+#include <stdio.h>
 
-struct factinject_logger_traits
-{
-	constexpr static const char* name = "factinject";
-	constexpr static int logLevel = LOGLEVEL_FACTINJECT;
-};
+#ifndef _FACTINJECT_CPP
+#define EXTERN extern
+#else
+#define EXTERN
+#endif
 
-typedef Log<factinject_logger_traits> Logger;
+// The Stdio Sink:
+constexpr const char stdioname[] = "stdio";
+EXTERN template class Log<100,stdioname,FILE>;
+typedef Log<100,stdioname,FILE> StdioSink;
 
-template <>
-inline void Log<factinject_logger_traits>::initialize ()
-{
-	using namespace std;
-	pid_t mypid = getpid();
-	stringstream sstrcmd;
-	stringstream sstrdir;
-	sstrdir << "/tmp/" << factinject_logger_traits::name;
-	mkdir(sstrdir.str().c_str(),S_IWUSR|S_IRUSR|S_IXUSR);
-	sstrcmd << "tee /tmp/" << factinject_logger_traits::name << "/log";
-	//logfile = fopen(sstrfn.str().c_str(), "w+");
-	logfile = popen(sstrcmd.str().c_str(), "w");
-	if (!logfile) { throw errno_exception(std::runtime_error); }	
-}
 
-template <>
-inline void Log<factinject_logger_traits>::finalize ()
-{
-	assert(logfile != nullptr);
-	if (!pclose(logfile)) { throw errno_exception(std::runtime_error); }
-}
+// The File log Sink:
+constexpr const char mainlogfilename[] = "file";
+EXTERN template class Log<100,mainlogfilename,FILE>;
+typedef Log<100,mainlogfilename,FILE> MainLogFileSink;
 
+
+// The main application logger, which sends its output to each of the previous sinks. No more popen("tee ...") !
+constexpr const char applogname[] = "factinject";
+EXTERN template class Log<LOGLEVEL_FACTINJECT,applogname,StdioSink,MainLogFileSink>;
+typedef Log<LOGLEVEL_FACTINJECT,applogname,StdioSink,MainLogFileSink> Logger;
+
+// Feature loggers that reuse the same sinks as the main logger,
+//   but with their own compile-time / runtime level. 
+//
+// Ex:
+//   typedef Log<LOGLEVEL_FEAT, "feat", Logger>  FeatLog;
+//   FeatLog::level = LogLevel::DBG2;
+//   FeatLog::info("Feature 1 begins");
+
+
+#undef EXTERN

@@ -1,3 +1,5 @@
+#define _FACTINJECT_CPP
+
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -11,25 +13,25 @@
 #include <sys/user.h>
 #include <iostream>
 
-#define APPNAME "factinject"
+#ifndef LOGLEVEL_FACTINJECT
+#define LOGLEVEL_FACTINJECT 6
+#endif
 
 #include "util/log.hpp"
 #include "util/exceptions.hpp"
 #include "factinject_logger.hpp"
 #include "Inject.hpp"
 
-#ifndef LOGLEVEL_FACTINJECT
-#define LOGLEVEL_FACTINJECT 6
-#endif
-
 void cleanup ();
+
+FILE** pfh = &StdioSink::file;
 
 int main (int argc, char* argv[])
 {
-	Logger::initialize();
+	StdioSink::initialize_with_handle (stdout);
+	MainLogFileSink::initialize_with_filename("/tmp/factinject/log");
 
 	Logger::print("Startup.");
-	fflush(stdout);
 	
 	Tracee* factorio = nullptr;
 
@@ -47,7 +49,6 @@ int main (int argc, char* argv[])
 	Logger::print("Attaching to process %d.", factorio->pid);
 	factorio->Attach();
 	Logger::print("Success.");
-	fflush(stdout);
 	
 	// Inject self
 	Logger::info("Inject current executable into tracee.");
@@ -56,7 +57,7 @@ int main (int argc, char* argv[])
 	Logger::info("Done.");
 	factorio->rcont();
 	sleep(1);
-
+	
 	// Call dlerror
 	factorio->rbreak();
 	Logger::detail("Calling dlerror");
@@ -64,7 +65,7 @@ int main (int argc, char* argv[])
 	Logger::detail("Done.");
 	factorio->rcont();
 	
-	// Trap a Lua function in order to find Lua_context*
+	// Trap a Lua function in order to find Lua_state*
 	/*
 	factorio->rbreak();
 	factorio->ParseSymbolTable();
@@ -80,7 +81,7 @@ int main (int argc, char* argv[])
 	// All done.
 	delete factorio;
 
-	log::finalize();
+	Logger::finalize();
 	
 	return 0;
 }
