@@ -27,28 +27,6 @@ enum LogLevel {
 };
 
 
-template<typename...> struct SinkWriters { 	};
-
-template<typename First, typename...S>
-struct SinkWriters<First,S...>
-{
-	static void write_to_sinks (const char* szstr, int size)
-	{
-		First::write(szstr,size);
-		SinkWriters<S...>::write_to_sinks(szstr,size);
-	}
-};
-
-template<typename Last>
-struct SinkWriters<Last>
-{
-	static void write_to_sinks (const char* szstr, int size)
-	{
-		Last::write(szstr,size);
-	}
-};
-
-
 template<int Level, const char* Name, typename...Sinks>
 struct Log
 {
@@ -57,7 +35,7 @@ struct Log
 protected:
 	static void write (const char* szstr, int size)
 	{
-		SinkWriters<Sinks...>::write_to_sinks(szstr,size);
+		(Sinks::write(szstr,size), ...);
 	}
 
 	template<typename...Ps>

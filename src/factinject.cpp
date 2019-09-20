@@ -48,21 +48,20 @@ int main (int argc, char* argv[])
 	// Attach via ptrace
 	Logger::print("Attaching to process %d.", factorio->pid);
 	factorio->Attach();
-	Logger::print("Success.");
+	Logger::print("Done.");
 	
 	// Inject self
-	Logger::info("Inject current executable into tracee.");
+	Logger::print("Calling dlopen to inject.");
 	factorio->rbreak();
 	factorio->Inject_dlopen("/home/joya/localdev/factinject/src/factinject", RTLD_NOW | RTLD_GLOBAL);
-	Logger::info("Done.");
+	Logger::print("Done.");
 	factorio->rcont();
-	sleep(1);
 	
 	// Call dlerror
 	factorio->rbreak();
-	Logger::detail("Calling dlerror");
+	Logger::print("Calling dlerror");
 	factorio->Inject_dlerror();
-	Logger::detail("Done.");
+	Logger::print("Done.");
 	factorio->rcont();
 	
 	// Trap a Lua function in order to find Lua_state*
