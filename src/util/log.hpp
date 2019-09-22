@@ -122,7 +122,8 @@ template<int Level, const char* Name, typename...Sinks>
 template<int Lvl, typename...Ps>
 inline void Log<Level,Name,Sinks...>::log_at_level (const char* fmt, Ps...ps)
 {
-	if (Level < Lvl) return;
-	if (level < Lvl) return;
-	fmtprint(Lvl, fmt, ps...);
+	if constexpr (Level >= Lvl) {
+		if (level < Lvl) return;
+		fmtprint(Lvl, fmt, ps...);
+	}
 }
