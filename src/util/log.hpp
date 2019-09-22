@@ -32,7 +32,6 @@ struct Log
 {
 	inline static int level = Level;
 	
-protected:
 	static void write (const char* szstr, int size)
 	{
 		(Sinks::write(szstr,size), ...);
