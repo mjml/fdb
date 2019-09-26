@@ -5,7 +5,7 @@ CXXFLAGS=-g -O0 -I. -DDEBUG -DLOGLEVEL_FACTINJECT=8 -std=c++17 -fpie -fexception
 RM=rm
 LDFLAGS=-pie -ldl -g
 
-default: factinject exp0 exp1 exp2
+default: factinject
 
 clean:
 	$(RM) -rf *.o *.obj util/*.o util/*.obj factinject test? exp?

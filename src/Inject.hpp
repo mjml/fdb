@@ -1,9 +1,12 @@
 #pragma once
 
 #include <signal.h>
+#include <sys/ptrace.h>
 #include <vector>
 #include <map>
 #include <string>
+#include <memory>
+#include <functional>
 
 #ifndef _INJECT_CPP
 #define EXTERN extern
@@ -11,39 +14,77 @@
 #define EXTERN
 #endif
 
+
 struct Tracee;
+
+// Not sure if i will use this or not, since I kind of like the C-style flow of execution in the debugger...
+struct PTraceException
+{
+	constexpr static const char msg_EBUSY[] = "There was an error with allocating or freeing a debug register.";
+	
+  constexpr static const char msg_EFAULT[] = "There  was  an attempt to read from or write to an invalid area in the tracer's "
+		"or the tracee's memory, probably because the area wasn't mapped or accessible. "
+		"Unfortunately, under Linux, different variations of "
+		"this fault will return EIO or EFAULT more or less arbitrarily.";
+
+  constexpr static const char msg_EINVAL[] = "An attempt was made to set an invalid option.";
+
+  constexpr static const char msg_EIO[] = "Request is invalid, or an attempt was made to read from or write to an "
+		"invalid area in the tracer's or the tracee's memory, or there was a word-alignment "
+		"violation, or an invalid signal was specified during a restart request.";
+
+  constexpr static const char msg_EPERM[] = "The specified process cannot be traced. This could be because the tracer has "
+		"insufficient privileges (the required capability is CAP_SYS_PTRACE); unprivileged "
+		"processes cannot trace processes that they cannot send signals to or those running "
+		"set-user-ID/set-group-ID programs, for obvious reasons.  Alternatively, the process "
+		"may already be being traced, or (on kernels before 2.6.26) be init(1) (PID 1).";
+
+  constexpr static const char msg_ESRCH[] = "The specified process does not exist, or is not currently being traced by the caller, "
+		"or is not stopped (for requests that require a stopped tracee).";
+	
+	long retval;
+
+	const char* what() {
+		switch(retval) {
+		case EBUSY: return msg_EBUSY;
+		case EFAULT: return msg_EFAULT;
+		case EINVAL: return msg_EINVAL;
+		case EIO: return msg_EIO;
+		case EPERM: return msg_EPERM;
+		}
+	}
+
+	PTraceException (int r) : retval(r) {}
+	~PTraceException () = default;
+};
 
 struct Breakpoint
 {
-	Tracee*   tracee;
-	bool      enabled;
-	uint64_t  r_addr;
-	uint8_t   savedbyte;
+	uint64_t   addr;
+	bool       enabled;
+	uint64_t   replaced;
+	int        cnt;
+	std::function<void(Tracee&, Breakpoint&)> handler;
 	
-	Breakpoint(Tracee* _tracee, bool _enabled, uint64_t _r_addr);
-	~Breakpoint();
+	Breakpoint (void (*f)(Tracee&, Breakpoint&) ) : addr(0), enabled(false), replaced(0), cnt(0), handler(f) {}
+	~Breakpoint ()  = default;
 	
-	void Enable ();
-	void Disable ();
-	
+	virtual void operator() (Tracee& tracee) {
+		cnt++;
+		handler(tracee, *this);
+	}
 };
+typedef std::shared_ptr<Breakpoint> PBreakpoint;
 
-
-struct BreakpointMgr
-{
-	static std::map<uint64_t, Breakpoint> bpmap;
-
-	static void Wait ();
-	
-	static Breakpoint& FindBreakpoint (uint64_t rip);
-};
 
 struct SymbolTableEntry
 {
 	uint64_t    offset;
 	char        type;   // man nm
 	std::string name;
+	
 	SymbolTableEntry() : offset(0), type(0) {}
+	
 	void Parse (const char* line);
 };
 
@@ -57,16 +98,20 @@ struct SymbolTable
 	SymbolTable (const std::string& path);
 	~SymbolTable () {}
 
-	std::optional<uint64_t>            FindSymbolOffsetByPattern (const char* name_pat) const;
-	std::optional<const std::string*>  FindSymbolNameByPattern (const char* name_pat) const;
-	const SymbolTableEntry*            FindSymbolByPattern (const char* name_pat) const;
+	uint64_t            FindSymbolOffsetByPattern (const char* name_pat) const;
+	const std::string*  FindSymbolNameByPattern (const char* name_pat) const;
+
+	const SymbolTableEntry*  FindSymbolByPattern (const char* name_pat) const;
 	
 	void Parse (const std::string& _path);
 	
 };
 
+
 struct SymbolTableMemo
 {
+	typedef std::optional<const SymbolTable*> result_type;
+	
 	std::map<std::string, SymbolTable> tables;
 
 	SymbolTableMemo () {}
@@ -74,9 +119,10 @@ struct SymbolTableMemo
 
 	void AddSymbolTable (const SymbolTable& table) { tables.insert(std::pair(table.path, table)); }
 	void RemoveSymbolTable (const SymbolTable& table) { tables.erase(tables.find(table.path)); }
-	const SymbolTable* FindSymbolTableByName (const std::string& pathname) const;
-	const SymbolTable* FindSymbolTableByPattern (const char* regex) const;
+	result_type FindSymbolTableByName (const std::string& pathname) const;
+	result_type FindSymbolTableByPattern (const char* regex) const;
 };
+
 
 EXTERN SymbolTableMemo symbolTableMemo;
 
@@ -123,48 +169,90 @@ struct Process
 	void ParseSegmentMap ();
 	
 	uint64_t FindSymbolOffsetByPattern (const char* regex_pattern);
-
+	
 	uint64_t FindSymbolAddressByPattern (const char* regex_pattern);
-
+	
 	uint64_t FindSymbolAddressByPattern (const char* pat_symbol, const char* module);
 	
 	const SegInfo* FindSegmentByPattern (const char* regex_pattern, const char* flags);
 	
 };
 
+
 struct Tracee : public Process
 {
+  enum {
+				UNATTACHED,
+				STOPPED,
+				RUNNING
+	} runstate;
 
-	Tracee () : Process() {}
-	Tracee (int _pid) : Process(_pid) {}
+	typedef uint64_t pointer;
+	
+	Tracee () : Process(), runstate(UNATTACHED) {}
+	Tracee (int _pid) : Process(_pid), runstate(UNATTACHED) {}
 	~Tracee () {}
 	
-	static Tracee* FindByNamePattern (const char* regex_pattern);
-
+	std::map< uint64_t, PBreakpoint > brkpts;
+	
+	static Tracee* FindByNamePattern (const char* name_pat);
+	static int FindPidByNamePAttern (const char* name_pat);
+	
 	void Attach ();
 	
 	void Kill (int signal=SIGKILL);
-
-	int rbreak ();
-
-	int rcont ();
-
-	int SaveRegisters (struct user* ur);
-
-	int RestoreRegisters (struct user* ur);
-
-	int GrabText (int size, void* addr, uint8_t* buffer);
-
-	int InjectText (int size, void* addr, const uint8_t* buffer);
-
-	int InjectAndRunText (int size, const uint8_t* text);
 	
-	void* Inject_dlopen (const char* szsharedlib, uint32_t flags);
+	void Break ();
+	
+	void AsyncContinue ();
 
-	void* Inject_dlsym (const char* szsymbol);
+	void Continue ();
+	
+	void SaveRegisters (struct user* ur);
+	
+	void RestoreRegisters (struct user* ur);
 
-	void* Inject_dlerror ();
+	void GrabText (int size, void* addr, uint8_t* buffer) { GrabText(size, reinterpret_cast<uint64_t>(addr), buffer); }
+
+	void GrabText (int size, uint64_t addr, uint8_t* buffer);
+	
+	void InjectText (int size, void* addr, const uint8_t* buffer) { InjectText(size, reinterpret_cast<uint64_t>(addr), buffer); }
+	
+	void InjectText (int size, uint64_t addr, const uint8_t* buffer);
+	
+	void InjectAndRunText (int size, const uint8_t* text);
+	
+	void RegisterBreakpoint (PBreakpoint& brkp);
+	
+	void UnregisterBreakpoint (PBreakpoint& brkp);
+	
+	void EnableBreakpoint (PBreakpoint& brkp);
+	
+	void DisableBreakpoint (PBreakpoint& brkp);
+	
+	void Wait (int* stop_signal = nullptr);
+	
+  void DispatchAtStop ();
+	
+	pointer Inject_dlopen (const char* szsharedlib, uint32_t flags);
+	
+	pointer Inject_dlsym (const char* szsymbol);
+	
+	pointer Inject_dlerror ();
 	
 };
 
+
+template<typename...F>
+struct CTTracee : public Tracee
+{
+	std::tuple<F...> funcs;
+	
+	CTTracee(F..._f) : Tracee(), funcs(_f...) {}
+	~CTTracee();
+	
+	void Wait();
+};
+
 #undef EXTERN
+
