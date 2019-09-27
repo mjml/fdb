@@ -19,6 +19,7 @@
 #include <stdexcept>
 #include <regex>
 
+#include "util/microsleep.h"
 #include "util/exceptions.hpp"
 #include "factinject_logger.hpp"
 #include "Inject.hpp"
@@ -212,9 +213,13 @@ void Process::ParseSegmentMap ()
 			segi.file = std::string(name);
 			segtab.emplace_back(segi);
 		}
+
+		SegInfo& segi2 = segtab.back();
+		//Logger::debug2("Seginfo: %s [0x%lx - 0x%lx]",segi2.file.c_str(), segi2.start, segi2.end);
 		
 	} while (!mapsfile.eof());
 	
+	parsed_segtab = true;
 }
 
 
@@ -281,12 +286,13 @@ const SegInfo* Process::FindSegmentByPattern (const char* module_pat, const char
 		asm("nop;");
 	}
 	
-	Throw(std::runtime_error, "Couldn't find a segment with a module module matching '%s'", module_pat);
+	Throw(std::runtime_error, "Couldn't find a segment with a module matching '%s'", module_pat);
 }
 
 
 Tracee* Tracee::FindByNamePattern (const char* regex_pattern)
 {
+	int results = 0;
 	int result=0;
 	regex_t regex;
 	regcomp (&regex, regex_pattern, REG_EXTENDED);
@@ -308,18 +314,24 @@ Tracee* Tracee::FindByNamePattern (const char* regex_pattern)
 		fs >> str;
 
 		if (regexec(&regex, str.c_str(), 0, nullptr, 0) == 0) {
-			result = pid;
-			fs.close();
-			break;
+			results++;
+			if (!result) {
+				result = pid;
+			}
 		}
 		
 		fs.close();
 		de = readdir(procdir);
 	}
+
+	
+	
+	closedir(procdir);
 	
 	regfree(&regex);
 	
-	assert_re(result, "couldn't find process using the pattern '%s'", regex_pattern);
+	assert_re(result != 0, "Couldn't find process using the pattern '%s'", regex_pattern);
+	assert_re(results < 2, "Danger! Too many factorio processes running with pattern '%s'. Which one do I attach to?", regex_pattern);
 	
 	return new Tracee(result);
 }
@@ -328,7 +340,7 @@ Tracee* Tracee::FindByNamePattern (const char* regex_pattern)
 void Tracee::Attach ()
 {
 	assert_re(pid, "Error: no pid defined to attach to");
-	
+	ParseSegmentMap();
 	if (ptrace(PTRACE_SEIZE,pid,0,PTRACE_O_TRACESYSGOOD) == -1) {
 		throw PTraceException(errno);
 	}
@@ -359,14 +371,14 @@ void Tracee::RestoreRegisters (struct user* ur)
 	}
 }
 
-constexpr static char logname[] = "Break";
-typedef Log<3,logname,Logger> RBLog;
+constexpr static char logname[] = "Tracee::Break";
+typedef Log<10,logname,Logger> RBLog;
 
 void Tracee::Break ()
 {
 	int r = 0;
 
-	RBLog::info("Tracee::Break(): sending interrupt to %d.", pid);
+	RBLog::info("sending interrupt to %d.", pid);
 	if (r = ptrace(PTRACE_INTERRUPT,pid,0,0); r  == -1) {
 		RBLog::error("Error : %s", strerror(errno));
 		throw PTraceException(errno);
@@ -377,45 +389,90 @@ void Tracee::Break ()
 	struct user ur;
 
 	int syscallstops = 0;
-	
+	int sig = 0;
+	bool again = true;
+
 	do {
+		RBLog::info("Waiting for %d...", pid);
+		waitpid(pid, &wstatus,__WALL);
+		RBLog::info("Wait complete.");
 		
-		waitpid(pid, &wstatus,0);
-		RBLog::detail("Stopped: ");
-		
-		SaveRegisters(&ur);
-		
-		ptrace(PTRACE_GETSIGINFO, pid, 0, &siginfo);
 		if (WIFSTOPPED(wstatus)) {
-			RBLog::detail("# STOP received. rip=0x%lx  rbp=0x%lx  rsp=0x%lx", ur.regs.rip, ur.regs.rbp, ur.regs.rsp);
-			RBLog::detail("siginfo.si_info is 0x%lx", siginfo.si_code);
-			if (WSTOPSIG(wstatus) == (SIGTRAP|0x80)) {
-				// this indicates that we're inside a syscall-enter-stop
-				syscallstops++;
-				RBLog::detail("wstatus == SIGTRAP|0x80");
-			} else if (WSTOPSIG(wstatus) == SIGTRAP) {
-				//syscallstops++;
-				RBLog::detail("wstatus == SIGTRAP");
-				// this indicates that we're inside a syscall-exit stop
-			} else {
-				RBLog::detail("WSTOPSIG(wstatus) == 0x%lx", WSTOPSIG(wstatus));
+			
+			// This is a ptrace-stop by definition.
+			// It may be further classified as either signal-delivery-stop, group-stop, PTRACE_EVENT stop, or syscall-stop.
+			sig = WSTOPSIG(wstatus);
+
+			if (long result = ptrace(PTRACE_GETSIGINFO, pid, 0, &siginfo); result == -1) {
+				Logger::error("Error while getting signal info from tracee");
+				throw PTraceException(errno);
 			}
-			if (syscallstops < 2 || ur.regs.rbp < 0x1000) {
-				ptrace(PTRACE_SYSCALL,pid,0,0);
-				continue;
+			
+			// If sig is SIGTRAP, then this should be a signal-delivery-stop or a syscall-stop
+			SaveRegisters(&ur);
+			
+			RBLog::detail("Tracee is STOPPED. rip=0x%lx  rbp=0x%lx  rsp=0x%lx  sig=%d", ur.regs.rip, ur.regs.rbp, ur.regs.rsp, sig);
+			
+			if (siginfo.si_code == SIGTRAP || siginfo.si_code == (SIGTRAP|0x80)) {
+				if (ur.regs.rax == -ENOSYS) {
+					RBLog::debug("syscall-enter-stop");
+				} else {
+					RBLog::debug("syscall-exit-stop");
+				}
+			} else if (siginfo.si_code == SI_KERNEL) {
+				// This SIGTRAP sent by the kernel (for unknown reasons)
+				RBLog::debug("SIGTRAP sent from kernel");
+			} else if (siginfo.si_code <= 0) {
+				// This is SIGTRAP delivered as a result of userspace action
+				// such as tgkill, kill, sigqueue (maybe PTRACE?)
+				RBLog::debug("SIGTRAP sent by user process");
 			} else {
-				break;
+				
 			}
+		
+			RBLog::debug("siginfo: .si_signo=%d   .si_errno=%d   .si_code=0x%x",
+									 siginfo.si_signo, siginfo.si_errno, siginfo.si_code);
+
+			// sanity check: what segment is rip in?
+			bool found_segment = false;
+			for (auto it = segtab.begin(); it != segtab.end(); it++) {
+				SegInfo& si = *it;
+				if (si.start <= ur.regs.rip && ur.regs.rip < si.end) {
+					found_segment = true;
+					RBLog::info("break landed in segment: %s", si.file.c_str());
+				}
+			}
+			if (!found_segment) {
+				RBLog::warning("break landed in unidentified segment!");
+				if (long result = ptrace(PTRACE_CONT, pid, 0,0); result == -1) {
+					throw PTraceException(errno);
+				}
+				microsleep(0,300000L);
+				if (long result = ptrace(PTRACE_INTERRUPT, pid, 0,0); result == -1) {
+					throw PTraceException(errno);
+				}
+				/*
+				if (long result = ptrace(PTRACE_SYSCALL, pid, 0,0); result == -1) {
+					throw PTraceException(errno);
+				}
+				*/
+				
+				
+				again = true;
+			} else {
+				again = false;
+			}
+		
 		} else {
 			// exit or termination
 			const char *msg = "Signal received by debugger but tracee is not stopped. Exiting.";
 			RBLog::error(msg);
 			Throw(std::runtime_error, msg);
 		}
-		
-		asm("nop;");
 
-	} while (1);
+		microsleep(0, 100000L);
+		
+	} while (again);
 }
 
 
@@ -526,45 +583,145 @@ void Tracee::UnregisterBreakpoint (PBreakpoint& brkp)
 
 void Tracee::EnableBreakpoint (PBreakpoint& brkp)
 {
-	const int bufsiz = 128;
-	uint8_t buf[bufsiz];
-	memset(buf, 0, bufsiz);
-	Logger::print("Enabling breakpoint at 0x%lx", brkp->addr);
-	
-	GrabText(bufsiz, brkp->addr, buf);
 	GrabText(sizeof(uint64_t), brkp->addr, reinterpret_cast<uint8_t*>(&brkp->replaced));
 	uint64_t opbrk = (brkp->replaced & ~(uint64_t)(0xff)) | 0xcc;
 	InjectText(sizeof(uint64_t), brkp->addr, reinterpret_cast<uint8_t*>(&opbrk));
 	brkp->enabled = true;
-	GrabText(bufsiz, brkp->addr, buf);
 }
 
 
 void Tracee::DisableBreakpoint (PBreakpoint& brkp)
 {
-	assert_re(brkp->enabled, "Disabling a breakpoint that is already disabled can lead to erroneus code injection.");
 	Logger::info("Disabling breakpoint");
-	InjectText(sizeof(uint64_t), reinterpret_cast<void*>(brkp->addr), reinterpret_cast<uint8_t*>(&brkp->replaced));
+	InjectText(sizeof(uint64_t), brkp->addr, reinterpret_cast<uint8_t*>(&brkp->replaced));
 	brkp->enabled = false;
 }
 
 
-void Tracee::Wait (int* stop_signal)
+WaitResult Tracee::_Wait (int* stop_signal)
 {
 	int wstatus;
 	siginfo_t siginfo;
-	waitpid(pid, &wstatus, 0);
+	
+	int retval = waitpid(pid, &wstatus, 0);
+	if (retval == ECHILD) {
+		// pid is not a process or isn't traced
+		return WaitResult::Unknown;
+	} else if (retval == EINTR) {
+		// a signal was sent to the current process
+		return WaitResult::Interrupted;
+	}
+	
 	if (WIFSTOPPED(wstatus)) {
 		int sig = WSTOPSIG(wstatus);
-		Logger::info("Tracee stopped.");
-		Logger::detail("WSTOPSIG(wstatus) = %d", sig);
+		bool syscall = sig >> 7 ? true : false;
+		Logger::detail("Tracee stopped. WSTOPSIG(wstatus) = %d  syscall=%s", sig, syscall ? "true" : "false");
 		if (stop_signal) *stop_signal = sig;
 		if (long result = ptrace(PTRACE_GETSIGINFO,pid,0,&siginfo); result == -1) {
 			Logger::error("Error while getting signal info from tracee");
 			throw PTraceException(errno);
 		}
-	} 
+		Logger::debug("siginfo:   .si_signo=%d   .si_errno=%d   .si_code=%d",
+									 siginfo.si_signo, siginfo.si_errno, siginfo.si_code);
+
+		assert_re(siginfo.si_code == sig, "siginfo.si_code != sig");
+		if (sig == 5) {
+			return WaitResult::Trapped;
+		} else if (sig==SIGSEGV || sig==SIGFPE || sig==SIGILL || sig==SIGABRT || sig==SIGPIPE ) {
+			return WaitResult::Faulted;
+		} else {
+			return WaitResult::Stopped;
+		}
+		
+	} else if (WIFCONTINUED(wstatus)) {
+		return WaitResult::Continued;
+	} else if (WIFEXITED(wstatus)) {
+		if (stop_signal) { *stop_signal = wstatus & 0xff; } // exit code
+		return WaitResult::Exited;
+	} else if (WIFSIGNALED(wstatus)) {
+		if (stop_signal) { *stop_signal = WTERMSIG(wstatus); }
+		return WaitResult::Terminated;
+	} else {
+		const char* msg = "Unidentified program status after waitpid().";
+		Logger::error(msg);
+		Throw(std::runtime_error,msg);
+	}
 }
+
+
+WaitResult Tracee::WaitAndThrowOnError (int* stop_signal)
+{
+	int sig = 0;
+	WaitResult result = Wait(&sig);
+	switch (result) {
+	case Unknown:
+		Throw(std::runtime_error,"Tracee process %d does not exist.", pid);
+	case Faulted:
+		Throw(std::runtime_error,"Tracee process faulted"); 
+	case Exited:
+		Throw(std::runtime_error,"Tracee process exited with code %d", sig); 
+	case Terminated:
+    Throw(std::runtime_error,"Tracee process terminated with signal %d", sig);
+	default:
+		return result;
+	}
+}
+
+
+WaitResult Tracee::TimedWait (int* stop_signal, int sec, int usec)
+{
+	timer_t tmr;
+	struct sigevent sev;
+	struct itimerspec ts;
+
+	memset(&tmr, 0, sizeof(timer_t));
+	memset(&sev, 0, sizeof(struct sigevent));
+	
+	sev.sigev_value.sival_ptr = reinterpret_cast<void*>(&tmr);
+	sev.sigev_signo = SIGALARM;
+  sev.sigev_notify = SIGEV_SIGNAL;
+	
+	if (int r = timer_create(CLOCK_REALTIME, &sev, &tmr); r != 0) {
+		Throw(std::runtime_error,"Couldn't create realtime clock for timed wait.");
+	}
+
+	ts.it_value.tv_sec = sec;
+	ts.it_value.tv_nsec = usec * 1000;
+	ts.it_interval.tv_sec = 0;
+	ts.it_interval.tv_nsec = 0;
+
+	if (int r = timer_settime(tmr, 0, &ts, 0); r == -1) {
+		Throw(std::runtime_error,"Couldn't arm timed wait timer.");
+	}
+
+	auto result = Wait(stop_signal);
+
+  if (int r = timer_delete(tmr); r) {
+		Throw(std::runtime_error,"Couldn't delete timed wait timer.");
+	}
+	
+	return result;
+}
+
+
+WaitResult Tracee::TimedWaitAndThrowOnError (int* stop_signal, int sec, int usec)
+{
+	int sig = 0;
+	WaitResult result = TimedWait(&sig, sec, usec);
+	switch (result) {
+	case Unknown:
+		Throw(std::runtime_error,"Tracee process %d does not exist.", pid);
+	case Faulted:
+		Throw(std::runtime_error,"Tracee process faulted"); 
+	case Exited:
+		Throw(std::runtime_error,"Tracee process exited with code %d", sig); 
+	case Terminated:
+    Throw(std::runtime_error,"Tracee process terminated with signal %d", sig);
+	default:
+		return result;
+	}
+}
+
 
 
 void Tracee::DispatchAtStop ()
@@ -574,16 +731,17 @@ void Tracee::DispatchAtStop ()
 	uint64_t rip = 0;
 	uint64_t rdi = 0;
 	SaveRegisters(&ur);
-	rip = ur.regs.rip - 1; // -1 to move back past the 0xcc stop instruction
-
+	rip = ur.regs.rip - 1;     // -1 to move back past the 0xcc stop instruction
+	bool user_disable = false; // true if the breakpoint handler flips the enabled bit to false
+	
 	if (auto srch = brkpts.find(rip); srch != brkpts.end()) {
 		
 		PBreakpoint &brkp = srch->second;
 		assert_re (brkp->enabled, "Stopped at breakpoint that is not enabled!");
-
-		(*brkp)(*this);
 		
-		// now replace the code that was missing, back up the rip, single-step through the replacement, then re-enable 
+		BreakpointCtx ctx(*this, brkp);
+		(*brkp)(ctx);
+		
 		DisableBreakpoint(brkp);
 		ur.regs.rip--;
 		RestoreRegisters(&ur);
@@ -593,7 +751,11 @@ void Tracee::DispatchAtStop ()
 			throw PTraceException(errno);
 		}
 		
-		EnableBreakpoint(brkp);
+		if (!ctx.disabled) {
+			EnableBreakpoint(brkp);
+		} else {
+			Logger::debug("Keeping breakpoint disabled after singlestep at request of user.");
+		}
 		
 	} else {
 		Logger::warning("Breakpoint hit at 0x%lx, but no matching breakpoint found!", ur.regs.rip);
@@ -610,10 +772,7 @@ auto Tracee::Inject_dlopen (const char* shlib_path, uint32_t flags) -> pointer
 	uint8_t buffer[bufsz];
 	uint8_t saved[bufsz];
 	struct user ur;
-	void *rip, *rip2;
-	void *rbp;
-	unsigned long segaddr;
-	unsigned long symofs;
+	uint64_t rip;
 	uint8_t r;
 	
 	// create the injected blob
@@ -637,7 +796,7 @@ auto Tracee::Inject_dlopen (const char* shlib_path, uint32_t flags) -> pointer
 	// save remote registers and existing rip text
 	SaveRegisters (&ur);
 	
-	rip = (void*)ur.regs.rip;
+	rip = ur.regs.rip;
 	GrabText (bufsz, rip, saved);
 	
 	// inject the blob
@@ -645,23 +804,13 @@ auto Tracee::Inject_dlopen (const char* shlib_path, uint32_t flags) -> pointer
 	InjectText (bufsz, rip, buffer);
 	
 	// continue the tracee
-	if (long result = ptrace(PTRACE_CONT, pid, 0, 0); result == -1) {
-		Logger::error("Couldn't continue the tracee.");
-		throw PTraceException(errno);
-	}
+	Logger::print("Continuing.");
+	Continue();
 
 	// wait for the tracee to stop
-	int wstatus;
-	siginfo_t siginfo;
-	Logger::info("Waiting for completion...");
-	waitpid(pid, &wstatus, 0);
-	if (WIFSTOPPED(wstatus)) {
-		Logger::info("Stopped. WSTOPSIG(wstatus) = %d", WSTOPSIG(wstatus));
-		if (long result = ptrace(PTRACE_GETSIGINFO,pid,0,&siginfo); result == -1) {
-			Logger::error("Error while getting signal info from tracee");
-			throw PTraceException(errno);
-		}
-	}
+	Logger::print("Waiting for tracee to stop...");
+	int sig;
+	WaitAndThrowOnError();
 	
 	// check the return code
 	struct user ur2;
@@ -671,7 +820,7 @@ auto Tracee::Inject_dlopen (const char* shlib_path, uint32_t flags) -> pointer
 	if (ur2.regs.rax == 0) {
 		Logger::warning("dlopen FAILED");
 	}
-	Logger::detail("rip difference: 0x%lx - %lx = %lu", ur2.regs.rip, ur.regs.rip, ur2.regs.rip - ur.regs.rip);
+	Logger::detail("rip difference: 0x%lx - 0x%lx = %ld", ur2.regs.rip, ur.regs.rip, ur2.regs.rip - ur.regs.rip);
 	
 	// restore tracee rip text and registers
 	Logger::info("Restoring previous codetext");
@@ -733,21 +882,10 @@ auto Tracee::Inject_dlsym (const char* szsymbol) -> pointer
 	InjectText (bufsz, rip, buffer);
 	
 	// continue the tracee
-	if (long result = ptrace(PTRACE_CONT, pid, 0, 0); result == -1) {
-		Logger::error("Couldn't continue the tracee.");
-		throw PTraceException(result);
-	}
+	Continue();
 
 	// wait for the tracee to stop
-	int wstatus;
-	siginfo_t siginfo;
-	Logger::info("Waiting for completion...");
-	waitpid(pid, &wstatus, 0);
-	if (WIFSTOPPED(wstatus)) {
-		Logger::info("Stopped. WSTOPSIG(wstatus) = %d", WSTOPSIG(wstatus));
-		ptrace(PTRACE_GETSIGINFO,pid,0,&siginfo);
-		print_siginfo(&siginfo);
-	}
+	Wait();
 	
 	// check the return code
 	struct user ur2;
@@ -803,19 +941,10 @@ auto Tracee::Inject_dlerror () -> pointer
 	InjectText (bufsz, rip, buffer);
 	
 	// continue the tracee
-	if (ptrace(PTRACE_CONT, pid, 0, 0) == -1) {
-		throw PTraceException(errno);
-	}
+	Continue();
 
 	// wait for the tracee to stop
-	int wstatus;
-	siginfo_t siginfo;
-	Logger::detail("Waiting for completion...");
-	waitpid(pid, &wstatus, 0);
-	if (WIFSTOPPED(wstatus)) {
-		Logger::detail("Stopped. WSTOPSIG(wstatus) = %d", WSTOPSIG(wstatus));
-		ptrace(PTRACE_GETSIGINFO,pid,0,&siginfo);
-	}
+	Wait();
 	
 	// check the return code
 	struct user ur2; 

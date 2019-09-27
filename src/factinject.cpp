@@ -35,7 +35,7 @@ const char stdioname[] = "stdio";
 const char mainlogfilename[] = "logfile";
 const char applogname[] = "factinject";
 
-void hook_lua_gc (Tracee& tracee,  Breakpoint& brkpt);
+void hook_lua_gc (BreakpointCtx& ctx);
 
 FILE** pfh = &StdioSink::file;
 
@@ -91,13 +91,13 @@ int main (int argc, char* argv[])
 	factorio->Continue();
 	
 	// spinwait
+	Logger::print("Waiting for lua to start. In Factorio, start or load a new game from the menu.");
 	while (1) {
 		
 		try {
-			Logger::print("Waiting for breakpoint...");
 			int stopsignal = 0;
 			factorio->Wait(&stopsignal);
-			Logger::print("Program break");
+			Logger::info("Caught stop signal %d", stopsignal);
 			if (stopsignal == SIGTRAP) {
 				factorio->DispatchAtStop();
 			} else {
@@ -110,6 +110,7 @@ int main (int argc, char* argv[])
 			Logger::error("Unidentified exception occured");
 			break;
 		}
+		Logger::info("Continuing.");
 		factorio->Continue();
 	}
 	
@@ -124,10 +125,10 @@ int main (int argc, char* argv[])
 	return 0;
 }
 
-void hook_lua_gc (Tracee& tracee, Breakpoint& brkpt)
+void hook_lua_gc (BreakpointCtx& ctx)
 {
 	struct user ur;
-	tracee.SaveRegisters(&ur);
+	ctx.tracee.SaveRegisters(&ur);
 	uint64_t rdi = ur.regs.rdi;
 	lua_State* ps = reinterpret_cast<lua_State*> (rdi);
 	
@@ -135,6 +136,7 @@ void hook_lua_gc (Tracee& tracee, Breakpoint& brkpt)
 		Logger::print("Found new lua_State 0x%lx", ps);
 		luastates.insert(ps);
 	}
+	ctx.disabled = true;
 }
 
 

@@ -1,8 +1,9 @@
 #pragma once
 
 #include <signal.h>
+#include <time.h>
 #include <sys/ptrace.h>
-#include <vector>
+#include <list>
 #include <map>
 #include <string>
 #include <memory>
@@ -17,8 +18,7 @@
 
 struct Tracee;
 
-// Not sure if i will use this or not, since I kind of like the C-style flow of execution in the debugger...
-struct PTraceException
+struct PTraceException : public std::exception
 {
 	constexpr static const char msg_EBUSY[] = "There was an error with allocating or freeing a debug register.";
 	
@@ -58,23 +58,33 @@ struct PTraceException
 	~PTraceException () = default;
 };
 
+struct BreakpointCtx;
+
 struct Breakpoint
 {
 	uint64_t   addr;
 	bool       enabled;
 	uint64_t   replaced;
 	int        cnt;
-	std::function<void(Tracee&, Breakpoint&)> handler;
+	std::function<void(BreakpointCtx& ctx)> handler;
 	
-	Breakpoint (void (*f)(Tracee&, Breakpoint&) ) : addr(0), enabled(false), replaced(0), cnt(0), handler(f) {}
+	Breakpoint (void (*f)(BreakpointCtx&) ) : addr(0), enabled(false), replaced(0), cnt(0), handler(f) {}
 	~Breakpoint ()  = default;
 	
-	virtual void operator() (Tracee& tracee) {
+	virtual void operator() (BreakpointCtx& ctx) {
 		cnt++;
-		handler(tracee, *this);
+		handler(ctx);
 	}
 };
 typedef std::shared_ptr<Breakpoint> PBreakpoint;
+
+struct BreakpointCtx
+{
+	Tracee& tracee;
+	PBreakpoint brkp;
+	bool disabled;
+	BreakpointCtx (Tracee& t, PBreakpoint& b) : tracee(t), brkp(b), disabled(false) {}
+};
 
 
 struct SymbolTableEntry
@@ -156,10 +166,10 @@ struct Process
 	bool parsed_symtab;
 	SymbolTable symtab;
 	bool parsed_segtab;
-	std::vector<SegInfo> segtab;
+	std::list<SegInfo> segtab;
 	
-	Process () : pid(0), parsed_symtab(false), parsed_segtab(false), segtab(500) {}
-	Process (int _pid) : pid(_pid), parsed_symtab(false), parsed_segtab(false), segtab(100) {}
+	Process () : pid(0), parsed_symtab(false), parsed_segtab(false), segtab() {}
+	Process (int _pid) : pid(_pid), parsed_symtab(false), parsed_segtab(false), segtab() {}
 	~Process () {}
 	
 	std::string FindExecutablePath ();
@@ -178,19 +188,24 @@ struct Process
 	
 };
 
+enum WaitResult { Unknown,
+									Interrupted,
+									Continued,
+									Stopped,
+									Trapped,
+									Faulted,
+									Exited,
+									Terminated
+};
+
+
 
 struct Tracee : public Process
 {
-  enum {
-				UNATTACHED,
-				STOPPED,
-				RUNNING
-	} runstate;
-
 	typedef uint64_t pointer;
 	
-	Tracee () : Process(), runstate(UNATTACHED) {}
-	Tracee (int _pid) : Process(_pid), runstate(UNATTACHED) {}
+	Tracee () : Process() {}
+	Tracee (int _pid) : Process(_pid) {}
 	~Tracee () {}
 	
 	std::map< uint64_t, PBreakpoint > brkpts;
@@ -229,8 +244,9 @@ struct Tracee : public Process
 	void EnableBreakpoint (PBreakpoint& brkp);
 	
 	void DisableBreakpoint (PBreakpoint& brkp);
-	
-	void Wait (int* stop_signal = nullptr);
+
+	template<int Sec=0, int USec=0, bool ThrowOnFailure=true>
+	WaitResult Wait (int* stop_signal = nullptr);
 	
   void DispatchAtStop ();
 	
@@ -240,7 +256,118 @@ struct Tracee : public Process
 	
 	pointer Inject_dlerror ();
 	
+protected:
+	WaitResult _Wait (int* stop_signal = nullptr);
+
+	
 };
+
+template <int Sec=0, int USec=0, bool ThrowOnFailure=true>
+WaitResult Tracee::Wait (int* stop_signal = nullptr)
+{
+	timer_t tmr;
+	struct sigevent sev;
+	struct itimerspec ts;
+
+	memset(&tmr, 0, sizeof(timer_t));
+	memset(&sev, 0, sizeof(struct sigevent));
+	
+	sev.sigev_value.sival_ptr = reinterpret_cast<void*>(&tmr);
+	sev.sigev_signo = SIGALRM;
+  sev.sigev_notify = SIGEV_SIGNAL;
+	
+	if (int r = timer_create(CLOCK_REALTIME, &sev, &tmr); r != 0) {
+		Throw(std::runtime_error,"Couldn't create realtime clock for timed wait.");
+	}
+
+	ts.it_value.tv_sec = Sec;
+	ts.it_value.tv_nsec = USec * 1000;
+	ts.it_interval.tv_sec = 0;
+	ts.it_interval.tv_nsec = 0;
+
+	if (int r = timer_settime(tmr, 0, &ts, 0); r == -1) {
+		Throw(std::runtime_error,"Couldn't arm timed wait timer.");
+	}
+
+	WaitResult result;
+	if (ThrowOnFailure) {
+		std::exception_ptr pe;
+		try {
+			result = Wait<0,0,true>(stop_signal);
+		} catch (...) {
+			pe = std::current_exception();
+		}
+		if (int r = timer_delete(tmr); r) {
+			Throw(std::runtime_error,"Couldn't delete timed wait timer.");
+		}
+		if (pe) {
+			std::rethrow_exception(pe);
+		}
+		return result;
+		
+	} else {
+		result = Wait<0,0,false>(stop_signal);
+	}
+	
+	return result;	
+}
+
+
+template <>
+WaitResult Tracee::Wait<0,0,false> (int* stop_signal = nullptr)
+{
+	int wstatus;
+	siginfo_t siginfo;
+	
+	int retval = waitpid(pid, &wstatus, 0);
+	if (retval == ECHILD) {
+		// pid is not a process or isn't traced
+		return WaitResult::Unknown;
+	} else if (retval == EINTR) {
+		// a signal was sent to the current process
+		return WaitResult::Interrupted;
+	}
+	
+	if (WIFSTOPPED(wstatus)) {
+		int sig = WSTOPSIG(wstatus);
+		bool syscall = sig >> 7 ? true : false;
+		Logger::detail("Tracee stopped. WSTOPSIG(wstatus) = %d  syscall=%s", sig, syscall ? "true" : "false");
+		if (stop_signal) *stop_signal = sig;
+		if (long result = ptrace(PTRACE_GETSIGINFO,pid,0,&siginfo); result == -1) {
+			Logger::error("Error while getting signal info from tracee");
+			throw PTraceException(errno);
+		}
+		Logger::debug("siginfo:   .si_signo=%d   .si_errno=%d   .si_code=%d",
+									 siginfo.si_signo, siginfo.si_errno, siginfo.si_code);
+
+		assert_re(siginfo.si_code == sig, "siginfo.si_code != sig");
+		if (sig == 5) {
+			return WaitResult::Trapped;
+		} else if (sig==SIGSEGV || sig==SIGFPE || sig==SIGILL || sig==SIGABRT || sig==SIGPIPE ) {
+			return WaitResult::Faulted;
+		} else {
+			return WaitResult::Stopped;
+		}
+		
+	} else if (WIFCONTINUED(wstatus)) {
+		return WaitResult::Continued;
+	} else if (WIFEXITED(wstatus)) {
+		if (ThrowOnFailure) {
+			
+		} else {
+			if (stop_signal) { *stop_signal = wstatus & 0xff; } // exit code
+			return WaitResult::Exited;
+		}
+	} else if (WIFSIGNALED(wstatus)) {
+		if (stop_signal) { *stop_signal = WTERMSIG(wstatus); }
+		return WaitResult::Terminated;
+	} else {
+		const char* msg = "Unidentified program status after waitpid().";
+		Logger::error(msg);
+		Throw(std::runtime_error,msg);
+	}
+
+}
 
 
 template<typename...F>
