@@ -30,6 +30,8 @@ enum LogLevel {
 template<int Level, const char* Name, typename...Sinks>
 struct Log
 {
+	inline static int level = Level;
+	
 	static void write (const char* szstr, int size)
 	{
 		(Sinks::write(szstr,size), ...);
@@ -60,6 +62,7 @@ public:
 template<int Level, const char* Name>
 struct Log<Level,Name,FILE>
 {
+	inline static int level = Level;
 	inline static FILE* file;
 	static void initialize_with_filename(const std::string& filename);
 	static void initialize_with_handle(FILE* fh) { file = fh; }

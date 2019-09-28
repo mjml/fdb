@@ -27,13 +27,13 @@ typedef void lua_State;
 
 std::set<lua_State*> luastates;
 
-template class Log<100,stdioname,FILE>;
-template class Log<100,mainlogfilename,FILE>;
-template class Log<LOGLEVEL_FACTINJECT,applogname,StdioSink,MainLogFileSink>;
-
 const char stdioname[] = "stdio";
 const char mainlogfilename[] = "logfile";
 const char applogname[] = "factinject";
+
+template class Log<100,stdioname,FILE>;
+template class Log<100,mainlogfilename,FILE>;
+template class Log<LOGLEVEL_FACTINJECT,applogname,StdioSink,MainLogFileSink>;
 
 void hook_lua_gc (BreakpointCtx& ctx);
 
@@ -47,6 +47,10 @@ int main (int argc, char* argv[])
 	Logger::print("Startup.");
 	
 	Tracee* factorio = nullptr;
+	SymbolTable precache1;
+	SymbolTable precache2;
+	precache1.Parse("/usr/lib64/libc-2.27.so");
+	precache2.Parse("/usr/lib64/libpthread-2.27.so");
 
   // Find the attachee "factorio"
 	try {
@@ -63,7 +67,7 @@ int main (int argc, char* argv[])
 	factorio->Attach();
 	Logger::print("Done.");
 	
-	// Inject self
+	// Inject self -- this approach is flawed and prone to segfaults
 	Logger::print("Calling dlopen to inject.");
 	factorio->Break();
 	Tracee::pointer soaddr = factorio->Inject_dlopen("/home/joya/localdev/factinject/src/factinject", RTLD_NOW | RTLD_GLOBAL);

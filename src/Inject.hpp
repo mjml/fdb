@@ -9,10 +9,20 @@
 #include <memory>
 #include <functional>
 
+#include "factinject_logger.hpp"
+
 #ifndef _INJECT_CPP
 #define EXTERN extern
 #else
 #define EXTERN
+#endif
+
+#ifndef LOGLEVEL_WAIT
+#define LOGLEVEL_WAIT 3
+#endif
+
+#ifndef LOGLEVEL_RB
+#define LOGLEVEL_RB 3
 #endif
 
 
@@ -44,13 +54,14 @@ struct PTraceException : public std::exception
 	
 	long retval;
 
-	const char* what() {
+	virtual const char* what() {
 		switch(retval) {
 		case EBUSY: return msg_EBUSY;
 		case EFAULT: return msg_EFAULT;
 		case EINVAL: return msg_EINVAL;
 		case EIO: return msg_EIO;
 		case EPERM: return msg_EPERM;
+		default: return strerror(retval);
 		}
 	}
 
@@ -131,6 +142,7 @@ struct SymbolTableMemo
 	void RemoveSymbolTable (const SymbolTable& table) { tables.erase(tables.find(table.path)); }
 	result_type FindSymbolTableByName (const std::string& pathname) const;
 	result_type FindSymbolTableByPattern (const char* regex) const;
+
 };
 
 
@@ -183,8 +195,16 @@ struct Process
 	uint64_t FindSymbolAddressByPattern (const char* regex_pattern);
 	
 	uint64_t FindSymbolAddressByPattern (const char* pat_symbol, const char* module);
-	
+
+	std::pair<uint64_t, uint64_t> FindSymbolAddressPairByPattern (const char* pat_symbol, const char* module);
+
 	const SegInfo* FindSegmentByPattern (const char* regex_pattern, const char* flags);
+
+	std::pair<uint64_t, uint64_t> DecomposeAddress (uint64_t address);
+
+	std::pair<std::string, std::string> DescribeAddress (uint64_t address);
+	
+	
 	
 };
 
@@ -262,50 +282,63 @@ protected:
 	
 };
 
+extern const char waitlogname[];
+extern template class Log<LOGLEVEL_WAIT,waitlogname,Logger>;
+typedef Log<LOGLEVEL_WAIT,waitlogname,Logger> WaitLog;
+
 template <int Sec=0, int USec=0, bool ThrowOnFailure=true>
 inline WaitResult Tracee::Wait (int* stop_signal)
 {
+	
 	timer_t tmr;
 	struct sigevent sev;
 	struct itimerspec ts;
 
-	memset(&tmr, 0, sizeof(timer_t));
-	memset(&sev, 0, sizeof(struct sigevent));
+	if (Sec > 0 || USec > 0) {
+		memset(&tmr, 0, sizeof(timer_t));
+		memset(&sev, 0, sizeof(struct sigevent));
 	
-	sev.sigev_value.sival_ptr = reinterpret_cast<void*>(&tmr);
-	sev.sigev_signo = SIGALRM;
-	sev.sigev_notify = SIGEV_SIGNAL;
-	
-	if (int r = timer_create(CLOCK_REALTIME, &sev, &tmr); r != 0) {
-		Throw(std::runtime_error,"Couldn't create realtime clock for timed wait.");
-	}
+		sev.sigev_value.sival_ptr = reinterpret_cast<void*>(&tmr);
+		sev.sigev_signo = SIGALRM;
+		sev.sigev_notify = SIGEV_SIGNAL;
+
+		WaitLog::info("Creating timer for timed wait");
+		if (int r = timer_create(CLOCK_REALTIME, &sev, &tmr); r != 0) {
+			Throw(std::runtime_error,"Couldn't create realtime clock for timed wait.");
+		}
 		
-	ts.it_value.tv_sec = Sec;
-	ts.it_value.tv_nsec = USec * 1000;
-	ts.it_interval.tv_sec = 0;
-	ts.it_interval.tv_nsec = 0;
-	
-	if (int r = timer_settime(tmr, 0, &ts, 0); r == -1) {
-		Throw(std::runtime_error,"Couldn't arm timed wait timer.");
+		ts.it_value.tv_sec = Sec;
+		ts.it_value.tv_nsec = USec * 1000;
+		ts.it_interval.tv_sec = 0;
+		ts.it_interval.tv_nsec = 0;
+		
+		WaitLog::info("Setting timer for %d.%d", Sec, USec);
+		if (int r = timer_settime(tmr, 0, &ts, 0); r == -1) {
+			Throw(std::runtime_error,"Couldn't arm timed wait timer.");
+		}
 	}
 	
 	WaitResult result;
 	int sig = 0;
 	
-	if (ThrowOnFailure) {
+	if (ThrowOnFailure && (Sec>0 || USec>0)) {
 		std::exception_ptr pe;
 		try {
+			WaitLog::debug("try/catch Wait<0,0,false>(&sig)");
 			result = Wait<0,0,false>(&sig);
 		} catch (...) {
 			pe = std::current_exception();
 		}
-		if (int r = timer_delete(tmr); r) {
-			Throw(std::runtime_error,"Couldn't delete timed wait timer.");
+		if (Sec>0 && USec>0) {
+			if (int r = timer_delete(tmr); r==-1) {
+				Throw(std::runtime_error,"Couldn't delete timed wait timer.");
+			}
 		}
 		if (pe) {
 			std::rethrow_exception(pe);
 		}
 	} else {
+		WaitLog::debug("call Wait<0,0,false>(&sig)");
 		result = Wait<0,0,false>(&sig);
 	}
 
