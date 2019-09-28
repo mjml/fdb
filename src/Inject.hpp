@@ -263,7 +263,7 @@ protected:
 };
 
 template <int Sec=0, int USec=0, bool ThrowOnFailure=true>
-WaitResult Tracee::Wait (int* stop_signal = nullptr)
+inline WaitResult Tracee::Wait (int* stop_signal)
 {
 	timer_t tmr;
 	struct sigevent sev;
@@ -274,26 +274,28 @@ WaitResult Tracee::Wait (int* stop_signal = nullptr)
 	
 	sev.sigev_value.sival_ptr = reinterpret_cast<void*>(&tmr);
 	sev.sigev_signo = SIGALRM;
-  sev.sigev_notify = SIGEV_SIGNAL;
+	sev.sigev_notify = SIGEV_SIGNAL;
 	
 	if (int r = timer_create(CLOCK_REALTIME, &sev, &tmr); r != 0) {
 		Throw(std::runtime_error,"Couldn't create realtime clock for timed wait.");
 	}
-
+		
 	ts.it_value.tv_sec = Sec;
 	ts.it_value.tv_nsec = USec * 1000;
 	ts.it_interval.tv_sec = 0;
 	ts.it_interval.tv_nsec = 0;
-
+	
 	if (int r = timer_settime(tmr, 0, &ts, 0); r == -1) {
 		Throw(std::runtime_error,"Couldn't arm timed wait timer.");
 	}
-
+	
 	WaitResult result;
+	int sig = 0;
+	
 	if (ThrowOnFailure) {
 		std::exception_ptr pe;
 		try {
-			result = Wait<0,0,true>(stop_signal);
+			result = Wait<0,0,false>(&sig);
 		} catch (...) {
 			pe = std::current_exception();
 		}
@@ -303,70 +305,31 @@ WaitResult Tracee::Wait (int* stop_signal = nullptr)
 		if (pe) {
 			std::rethrow_exception(pe);
 		}
-		return result;
-		
 	} else {
-		result = Wait<0,0,false>(stop_signal);
+		result = Wait<0,0,false>(&sig);
 	}
-	
-	return result;	
+
+	if (stop_signal) *stop_signal = sig;
+
+	if (ThrowOnFailure) {
+		switch (result) {
+		case WaitResult::Exited:       Throw(std::runtime_error, "Tracee exited with code %d", sig);
+		case WaitResult::Terminated:   Throw(std::runtime_error, "Tracee was terminated with signal %d", sig);
+		case WaitResult::Faulted:      Throw(std::runtime_error, "Tracee caught an exception %d", sig);
+		case WaitResult::Unknown:      Throw(std::runtime_error, "Process %d could not be found", pid);
+		default:
+			return result;
+		}
+	} else {
+		return result;
+	}
 }
 
 
 template <>
-WaitResult Tracee::Wait<0,0,false> (int* stop_signal = nullptr)
+inline WaitResult Tracee::Wait<0,0,false> (int* stop_signal)
 {
-	int wstatus;
-	siginfo_t siginfo;
-	
-	int retval = waitpid(pid, &wstatus, 0);
-	if (retval == ECHILD) {
-		// pid is not a process or isn't traced
-		return WaitResult::Unknown;
-	} else if (retval == EINTR) {
-		// a signal was sent to the current process
-		return WaitResult::Interrupted;
-	}
-	
-	if (WIFSTOPPED(wstatus)) {
-		int sig = WSTOPSIG(wstatus);
-		bool syscall = sig >> 7 ? true : false;
-		Logger::detail("Tracee stopped. WSTOPSIG(wstatus) = %d  syscall=%s", sig, syscall ? "true" : "false");
-		if (stop_signal) *stop_signal = sig;
-		if (long result = ptrace(PTRACE_GETSIGINFO,pid,0,&siginfo); result == -1) {
-			Logger::error("Error while getting signal info from tracee");
-			throw PTraceException(errno);
-		}
-		Logger::debug("siginfo:   .si_signo=%d   .si_errno=%d   .si_code=%d",
-									 siginfo.si_signo, siginfo.si_errno, siginfo.si_code);
-
-		assert_re(siginfo.si_code == sig, "siginfo.si_code != sig");
-		if (sig == 5) {
-			return WaitResult::Trapped;
-		} else if (sig==SIGSEGV || sig==SIGFPE || sig==SIGILL || sig==SIGABRT || sig==SIGPIPE ) {
-			return WaitResult::Faulted;
-		} else {
-			return WaitResult::Stopped;
-		}
-		
-	} else if (WIFCONTINUED(wstatus)) {
-		return WaitResult::Continued;
-	} else if (WIFEXITED(wstatus)) {
-		if (ThrowOnFailure) {
-			
-		} else {
-			if (stop_signal) { *stop_signal = wstatus & 0xff; } // exit code
-			return WaitResult::Exited;
-		}
-	} else if (WIFSIGNALED(wstatus)) {
-		if (stop_signal) { *stop_signal = WTERMSIG(wstatus); }
-		return WaitResult::Terminated;
-	} else {
-		const char* msg = "Unidentified program status after waitpid().";
-		Logger::error(msg);
-		Throw(std::runtime_error,msg);
-	}
-
+	return _Wait(stop_signal);
 }
 
 

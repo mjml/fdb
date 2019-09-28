@@ -642,86 +642,11 @@ WaitResult Tracee::_Wait (int* stop_signal)
 		if (stop_signal) { *stop_signal = WTERMSIG(wstatus); }
 		return WaitResult::Terminated;
 	} else {
-		const char* msg = "Unidentified program status after waitpid().";
-		Logger::error(msg);
-		Throw(std::runtime_error,msg);
+		const char* msg = "Unidentifiable program status after waitpid().";
+		Logger::critical(msg);
+		Throw(std::domain_error,msg);
 	}
 }
-
-
-WaitResult Tracee::WaitAndThrowOnError (int* stop_signal)
-{
-	int sig = 0;
-	WaitResult result = Wait(&sig);
-	switch (result) {
-	case Unknown:
-		Throw(std::runtime_error,"Tracee process %d does not exist.", pid);
-	case Faulted:
-		Throw(std::runtime_error,"Tracee process faulted"); 
-	case Exited:
-		Throw(std::runtime_error,"Tracee process exited with code %d", sig); 
-	case Terminated:
-    Throw(std::runtime_error,"Tracee process terminated with signal %d", sig);
-	default:
-		return result;
-	}
-}
-
-
-WaitResult Tracee::TimedWait (int* stop_signal, int sec, int usec)
-{
-	timer_t tmr;
-	struct sigevent sev;
-	struct itimerspec ts;
-
-	memset(&tmr, 0, sizeof(timer_t));
-	memset(&sev, 0, sizeof(struct sigevent));
-	
-	sev.sigev_value.sival_ptr = reinterpret_cast<void*>(&tmr);
-	sev.sigev_signo = SIGALARM;
-  sev.sigev_notify = SIGEV_SIGNAL;
-	
-	if (int r = timer_create(CLOCK_REALTIME, &sev, &tmr); r != 0) {
-		Throw(std::runtime_error,"Couldn't create realtime clock for timed wait.");
-	}
-
-	ts.it_value.tv_sec = sec;
-	ts.it_value.tv_nsec = usec * 1000;
-	ts.it_interval.tv_sec = 0;
-	ts.it_interval.tv_nsec = 0;
-
-	if (int r = timer_settime(tmr, 0, &ts, 0); r == -1) {
-		Throw(std::runtime_error,"Couldn't arm timed wait timer.");
-	}
-
-	auto result = Wait(stop_signal);
-
-  if (int r = timer_delete(tmr); r) {
-		Throw(std::runtime_error,"Couldn't delete timed wait timer.");
-	}
-	
-	return result;
-}
-
-
-WaitResult Tracee::TimedWaitAndThrowOnError (int* stop_signal, int sec, int usec)
-{
-	int sig = 0;
-	WaitResult result = TimedWait(&sig, sec, usec);
-	switch (result) {
-	case Unknown:
-		Throw(std::runtime_error,"Tracee process %d does not exist.", pid);
-	case Faulted:
-		Throw(std::runtime_error,"Tracee process faulted"); 
-	case Exited:
-		Throw(std::runtime_error,"Tracee process exited with code %d", sig); 
-	case Terminated:
-    Throw(std::runtime_error,"Tracee process terminated with signal %d", sig);
-	default:
-		return result;
-	}
-}
-
 
 
 void Tracee::DispatchAtStop ()
@@ -810,7 +735,7 @@ auto Tracee::Inject_dlopen (const char* shlib_path, uint32_t flags) -> pointer
 	// wait for the tracee to stop
 	Logger::print("Waiting for tracee to stop...");
 	int sig;
-	WaitAndThrowOnError();
+	Wait(&sig);
 	
 	// check the return code
 	struct user ur2;

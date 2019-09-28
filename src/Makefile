@@ -3,7 +3,7 @@ CXX=g++
 CFLAGS=-g -O0 -I. -DDEBUG -DLOGLEVEL_FACTINJECT=10 -fpie -fexceptions
 CXXFLAGS=-g -O0 -I. -DDEBUG -DLOGLEVEL_FACTINJECT=10 -std=c++17 -fpie -fexceptions
 RM=rm
-LDFLAGS=-pie -ldl -g
+LDFLAGS=-pie -ldl -lrt -g
 
 default: factinject
 
