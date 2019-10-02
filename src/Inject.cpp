@@ -308,25 +308,27 @@ const SegInfo* Process::FindSegmentByPattern (const char* module_pat, const char
 
 std::pair<uint64_t, uint64_t> Process::DecomposeAddress (uint64_t address)
 {
-	SegInfo* found = nullptr;
+	SegInfo* found_seg = nullptr;
 	for (auto it = segtab.begin(); it != segtab.end(); it++) {
 		SegInfo& segi = *it;
 		if (segi.start <= address && address < segi.end) {
-			found = &segi;
+			found_seg = &segi;
 		}
 	}
-	if (found) {
-		return std::pair<uint64_t,uint64_t>(found->start, address-found->start);
+	// little hack that only uses segment address for shared libraries, but not the main executable segment
+	uint64_t symofs = (address >= 0x700000000000) ? address - found_seg->start : address;
+	if (found_seg) {
+		// decomposition based on segment table
+		return std::pair<uint64_t,uint64_t>(found_seg->start, symofs);
 	} else {
-		return std::pair<uint64_t,uint64_t>();
+		// generic page/offset decomposition
+		return std::pair<uint64_t,uint64_t>(address & ~0xfff, address & 0xfff);
 	}
 }
 
 
 std::pair<std::string, std::string> Process::DescribeAddress (uint64_t address)
 {
-	// BUG: this doesn't take into account the non-relocatable executable addresses
-	//      (usually at the bottom of the address space)
 	SegInfo* found_seg = nullptr;
 	for (auto it = segtab.begin(); it != segtab.end(); it++) {
 		SegInfo& segi = *it;
@@ -337,13 +339,17 @@ std::pair<std::string, std::string> Process::DescribeAddress (uint64_t address)
 	if (!found_seg) {
 		return std::pair("[unknown]","<unknown>");
 	}
-	uint64_t offset = address - found_seg->start;
+	// little hack that only uses segment address for shared libraries, but not the main executable segment
+	uint64_t symofs = (address >= 0x700000000000) ? address - found_seg->start : address;
 	
 	auto symtab = symbolTableMemo.FindSymbolTableByName(found_seg->file);
 	SymbolTable mysymtab; 
 	if (!symtab.has_value()) {
 		mysymtab.Parse(found_seg->file.c_str());
 		symtab = &mysymtab;
+	}
+	if (found_seg->file.c_str()[0] == '[') {
+		return std::pair(found_seg->file, std::to_string(symofs));
 	}
 
 	auto& symbs = (*symtab)->symbols;
@@ -354,7 +360,7 @@ std::pair<std::string, std::string> Process::DescribeAddress (uint64_t address)
 	for (auto it = symbs.begin(); it != symbs.end(); it++) {
 		auto p = *it;
 		SymbolTableEntry& entry = p.second;
-		distance = offset - entry.offset;
+		distance = symofs - entry.offset;
 		if (distance > 0 && distance < mindistance) {
 			//Logger::debug2("Found symbol %s at distance 0x%x", entry.name.c_str(), distance);
 			mindistance = distance;
@@ -362,7 +368,9 @@ std::pair<std::string, std::string> Process::DescribeAddress (uint64_t address)
 		}
 	}
 	//Logger::debug2("Returning %s and %s", found_seg->file.c_str(), found_symname.c_str());
-	return std::pair(found_seg->file, found_symname);
+	char decorated_symname[512];
+	snprintf(decorated_symname, 512, "%s+0x%lx", found_symname.c_str(), mindistance);
+	return std::pair(found_seg->file, std::string(decorated_symname));
 }
 
 
@@ -447,7 +455,7 @@ void Tracee::RestoreRegisters (struct user* ur)
 	}
 }
 
-void Tracee::Break ()
+std::tuple<WaitResult, struct user> Tracee::Break ()
 {
 	int r = 0;
 
@@ -457,12 +465,11 @@ void Tracee::Break ()
 		throw PTraceException(errno);
 	}
 	
-	int wstatus;
+	int wstatus = 0;
 	siginfo_t siginfo;
 	struct user ur;
-
+	WaitResult result = WaitResult::Unknown;
 	bool syscall = true;
-	int syscallstops = 0;
 	int stopsig = 0;
 	int sig = 0;
 	uint64_t rbp = 0;
@@ -472,8 +479,25 @@ void Tracee::Break ()
 
 	do {
 		RBLog::info("Waiting for %d...", pid);
-		waitpid(pid, &wstatus,__WALL);
+		r = waitpid(pid, &wstatus,__WALL);
 		RBLog::info("Wait complete.");
+
+		if (r != pid) {
+			const char* msg;
+			if (r == EINTR) {
+				result = WaitResult::Interrupted;
+				Logger::warning("Break interrupted by signal");
+				return std::tuple(result,ur); // ur is basically undefined
+			} else if (r == ECHILD) {
+				msg = "No such child exists: %d";
+			  Logger::critical(msg,pid);
+				Throw(std::runtime_error,msg,pid);
+			} else  {
+				msg = "Strange value %d returned by waitpid()";
+				Logger::error(msg, r);
+				Throw(std::runtime_error,msg,r);
+			}
+		}
 		
 		if (WIFSTOPPED(wstatus)) {
 			
@@ -509,15 +533,18 @@ void Tracee::Break ()
 						RBLog::debug("syscall-exit-stop");
 					}
 				}
+				result = WaitResult::Trapped;
 			} else if (siginfo.si_code == SI_KERNEL) {
 				// This SIGTRAP sent by the kernel (for unknown reasons)
+				result = WaitResult::Stopped;
 				RBLog::debug("SIGTRAP sent from kernel");
 			} else if (siginfo.si_code <= 0) {
 				// This is SIGTRAP delivered as a result of userspace action
 				// such as tgkill, kill, sigqueue (maybe PTRACE?)
+				result = WaitResult::Stopped;
 				RBLog::debug("SIGTRAP sent by user process");
 			} else {
-				
+				result = WaitResult::Stopped;
 			}
 		
 			RBLog::debug("siginfo: .si_signo=%d   .si_errno=%d   .si_code=0x%x",
@@ -557,6 +584,8 @@ void Tracee::Break ()
 		}
 		
 	} while (again);
+
+	return std::tuple(result, ur);
 }
 
 
@@ -714,7 +743,11 @@ WaitResult Tracee::_Wait (int* stop_signal)
 			WaitLog::info("trapped with sig==SIGTRAP(5)");
 			return WaitResult::Trapped;
 		} else if (sig==SIGSEGV || sig==SIGFPE || sig==SIGILL || sig==SIGABRT || sig==SIGPIPE ) {
-			WaitLog::info("faulted with sig=%d", sig);
+			struct user ur;
+			SaveRegisters(&ur);
+			auto [ segname, symname ] = DescribeAddress(ur.regs.rip);
+			WaitLog::info("faulted with sig=%d at rip=0x%lx  %s:%s",
+										sig, ur.regs.rip, segname.c_str(), symname.c_str());
 			return WaitResult::Faulted;
 		} else {
 			WaitLog::info("stopped with generic signal sig=%d", sig);
@@ -781,10 +814,10 @@ void Tracee::DispatchAtStop ()
 
 auto Tracee::Inject_dlopen (const char* shlib_path, uint32_t flags) -> pointer
 {
-	const int arg2_offset = 1;
-	const int arg1_offset = 32;
-	const int funcaddr_offset = 14;
-	const int bufsz = 512;
+	const int arg2_offset = 8;
+	const int arg1_offset = 40;
+	const int funcaddr_offset = 22;
+	const int bufsz = 256;
 	uint8_t buffer[bufsz];
 	uint8_t saved[bufsz];
 	struct user ur;
@@ -794,12 +827,13 @@ auto Tracee::Inject_dlopen (const char* shlib_path, uint32_t flags) -> pointer
 	// create the injected blob
 	memset(buffer, 0, bufsz);
 	memcpy(buffer, (uint8_t*)
+				 "\x48\x81\xec\x00\x01\x00\x00"              // sub    $0x100, $rsp
 				 "\xbe\x02\x00\x00\x00"                      // mov    $0x2,%esi
 				 "\x48\x8d\x3d\x14\x00\x00\x00"              // lea    0x14(%rip),%rdi
 				 "\x48\xb8\xd1\xd2\xd3\xd4\xd5\xd6\xd7\xd8"  // mov    $0x0807060504030201, %rax
 				 "\xff\xd0"                                  // call   *%rax
 				 "\xcc"                                      // int    3
-				 , 25);
+				 , 32);
 	strncpy((char*)buffer + arg1_offset, shlib_path, bufsz-arg1_offset);
 	*(int32_t*)(buffer+arg2_offset) = flags;
 	
@@ -809,26 +843,21 @@ auto Tracee::Inject_dlopen (const char* shlib_path, uint32_t flags) -> pointer
 	*((uint64_t*)(buffer+funcaddr_offset)) = symaddr;
 	Logger::detail("dlopen is located at 0x%lx", symaddr);
 	
-	// save remote registers and existing rip text
 	SaveRegisters (&ur);
 	
 	rip = ur.regs.rip;
 	GrabText (bufsz, rip, saved);
 	
-	// inject the blob
 	Logger::print("Injecting dlopen call at 0x%lx...", rip);
 	InjectText (bufsz, rip, buffer);
 	
-	// continue the tracee
 	Logger::print("Continuing.");
 	Continue();
 
-	// wait for the tracee to stop
 	Logger::print("Waiting for tracee to stop...");
 	int sig;
 	auto result = Wait(&sig);
 	
-	// check the return code
 	struct user ur2;
 	SaveRegisters(&ur2);
 
@@ -838,14 +867,13 @@ auto Tracee::Inject_dlopen (const char* shlib_path, uint32_t flags) -> pointer
 	}
 	Logger::detail("rip difference: 0x%lx - 0x%lx = %ld", ur2.regs.rip, ur.regs.rip, ur2.regs.rip - ur.regs.rip);
 	
-	// restore tracee rip text and registers
 	Logger::info("Restoring previous codetext");
 	InjectText(bufsz, rip, saved);
 
 	Logger::info("Restoring previous registers");
 	RestoreRegisters (&ur);
 	
-	return ur2.regs.rax;
+	return ur2.regs.rax; // this is the dlopen return value
 
 }
 
@@ -853,7 +881,7 @@ auto Tracee::Inject_dlsym (const char* szsymbol) -> pointer
 {
 	const int arg1_offset = 32;
   const int funcaddr_offset = 9;
-	const int bufsz = 512;
+	const int bufsz = 256;
 	uint8_t buffer[bufsz];
 	uint8_t saved[bufsz];
 	struct user ur;

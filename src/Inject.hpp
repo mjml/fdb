@@ -232,12 +232,12 @@ struct Tracee : public Process
 	
 	static Tracee* FindByNamePattern (const char* name_pat);
 	static int FindPidByNamePAttern (const char* name_pat);
-	
+
 	void Attach ();
 	
 	void Kill (int signal=SIGKILL);
 	
-	void Break ();
+	std::tuple<WaitResult, struct user> Break ();
 	
 	void AsyncContinue ();
 

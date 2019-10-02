@@ -49,9 +49,11 @@ int main (int argc, char* argv[])
 	Tracee* factorio = nullptr;
 	SymbolTable precache1;
 	SymbolTable precache2;
+	SymbolTable precache3;
 	precache1.Parse("/usr/lib64/libc-2.27.so");
 	precache2.Parse("/usr/lib64/libpthread-2.27.so");
-
+	precache3.Parse("/usr/lib64/ld-2.27.so");
+	
   // Find the attachee "factorio"
 	try {
 		factorio = Tracee::FindByNamePattern("^factorio$");
@@ -67,12 +69,12 @@ int main (int argc, char* argv[])
 	factorio->Attach();
 	Logger::print("Done.");
 	
-	// Inject self -- this approach is flawed and prone to segfaults
+	// Inject self
 	Logger::print("Calling dlopen to inject.");
 	factorio->Break();
 	Tracee::pointer soaddr = factorio->Inject_dlopen("/home/joya/localdev/factinject/src/factinject", RTLD_NOW | RTLD_GLOBAL);
 	Logger::print("Done.");
-	factorio->AsyncContinue();
+	factorio->Continue();
 	
 	// Call dlerror
 	if (!soaddr) {
@@ -80,7 +82,8 @@ int main (int argc, char* argv[])
 		Logger::print("Calling dlerror");
 		factorio->Inject_dlerror();
 		Logger::print("Done.");
-		factorio->AsyncContinue();
+		factorio->Continue();
+		return 0;
 	}
 	
 	// Trap a Lua function in order to find Lua_state*

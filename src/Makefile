@@ -3,18 +3,18 @@ CXX=g++
 CFLAGS=-g -O0 -I. -DDEBUG -DLOGLEVEL_FACTINJECT=10 -DLOGLEVEL_WAIT=10 -fpie -fexceptions
 CXXFLAGS=-g -O0 -I. -DDEBUG -DLOGLEVEL_FACTINJECT=10 -DLOGLEVEL_WAIT=10 -DLOGLEVEL_RB=10 -std=c++17 -fpie -fexceptions
 RM=rm
-LDFLAGS=-pie -ldl -lrt -g
+LDFLAGS=-lrt -g
 
-default: factinject
+default: factinject activestub.so
 
 clean:
 	$(RM) -rf *.o *.obj util/*.o util/*.obj factinject test? exp?
 
 factinject: factinject.obj Inject.obj 
-	$(CXX) $(LDFLAGS) -rdynamic $^ -o $@
+	$(CXX) $(LDFLAGS) -pie -ldl -rdynamic $^ -o $@
 
-activestub.so: Inject.obj
-	$(CXX) $(LDFLAGS) -shared -pie -rdynamic -pthread $^ -o $@
+factstub.so: factstub.obj Inject.obj
+	$(CXX) $(LDFLAGS) -shared -rdynamic -pthread $^ -o $@
 
 test0: test0.o
 	$(CC) -g $^ -o $@
