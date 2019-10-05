@@ -1,9 +1,9 @@
 CC=gcc
 CXX=g++
-CFLAGS=-g -O0 -I. -DDEBUG -DLOGLEVEL_FACTINJECT=10 -DLOGLEVEL_WAIT=10 -fpie -fexceptions
-CXXFLAGS=-g -O0 -I. -DDEBUG -DLOGLEVEL_FACTINJECT=10 -DLOGLEVEL_WAIT=10 -DLOGLEVEL_RB=10 -std=c++17 -fpie -fexceptions
+CFLAGS=-g -O0 -I. -DDEBUG -DLOGLEVEL_FACTINJECT=10 -DLOGLEVEL_WAIT=10 -fexceptions
+CXXFLAGS=-fpic -g -O0 -I. -DDEBUG -DLOGLEVEL_FACTINJECT=10 -DLOGLEVEL_WAIT=10 -DLOGLEVEL_RB=10 -std=c++17 -fexceptions
 RM=rm
-LDFLAGS=-lrt -g
+LDFLAGS=-g -lrt
 
 default: factinject factstub.so
 
@@ -14,7 +14,7 @@ factinject: factinject.obj Inject.obj
 	$(CXX) $(LDFLAGS) -pie -ldl -rdynamic $^ -o $@
 
 factstub.so: factstub.obj Inject.obj
-	$(CXX) $(LDFLAGS) -shared -fpic -rdynamic -pthread $^ -o $@
+	$(CXX) $(LDFLAGS) -shared -rdynamic -pthread $^ -o $@
 
 test0: test0.o
 	$(CC) -g $^ -o $@

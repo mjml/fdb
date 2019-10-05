@@ -119,10 +119,13 @@ struct SymbolTable
 	SymbolTable (const std::string& path);
 	~SymbolTable () {}
 
+	uint64_t            FindSymbolOffsetByName (const char* name) const;
+	
 	uint64_t            FindSymbolOffsetByPattern (const char* name_pat) const;
 	const std::string*  FindSymbolNameByPattern (const char* name_pat) const;
 
 	const SymbolTableEntry*  FindSymbolByPattern (const char* name_pat) const;
+	const SymbolTableEntry*  FindSymbolByName (const char* name) const;
 	
 	void Parse (const std::string& _path);
 	
@@ -134,7 +137,7 @@ struct SymbolTableMemo
 	typedef std::optional<const SymbolTable*> result_type;
 	
 	std::map<std::string, SymbolTable> tables;
-
+	
 	SymbolTableMemo () {}
 	~SymbolTableMemo () {};
 

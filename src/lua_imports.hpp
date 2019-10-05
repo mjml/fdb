@@ -25,7 +25,7 @@ typedef int (*lua_Writer) (lua_State* L, const void* p, size_t sz, void* ud);
 // lua_absindex
 void (*lua_arith) (lua_State* L, int op);
 lua_CFunction (*lua_atpanic) (lua_State* L, lua_CFunction panicf);
-void (*lua_call) (lua_State* L, int nargs, int nresults);
+//void (*lua_call) (lua_State* L, int nargs, int nresults); // not compiled in!
 void (*lua_callk) (lua_State* L, int nargs, int nresults, int ctx, lua_CFunction k);
 int (*lua_checkstack) (lua_State* L, int extra);	
 void (*lua_close) (lua_State* L);
@@ -45,17 +45,17 @@ void (*lua_gettable) (lua_State* L, int index);
 int (*lua_gettop) (lua_State* L);
 void (*lua_getuservalue) (lua_State* L, int index);
 void (*lua_insert) (lua_State* L, int index);
-int  (*lua_isboolean) (lua_State* L, int index);
+//int  (*lua_isboolean) (lua_State* L, int index); // not compiled in!
 int (*lua_iscfunction) (lua_State* L, int index);
 int (*lua_isfunction) (lua_State* L, int index);
-int (*lua_islightuserdata) (lua_State* L, int index);
-int (*lua_isnil) (lua_State* L, int index);
-int (*lua_isnone) (lua_State* L, int index);
-int (*lua_isnoneornil) (lua_State* L, int index);
+//int (*lua_islightuserdata) (lua_State* L, int index); // not compiled in!
+//int lua_isnil (lua_State* L, int index);   // not compiled in!
+//int lua_isnone (lua_State* L, int index);  // not compiled in!
+//int lua_isnoneornil (lua_State* L, int index); // not compiled in!
 int (*lua_isnumber) (lua_State* L, int index);
 int (*lua_isstring) (lua_State* L, int index);
-int (*lua_istable) (lua_State* L, int index);
-int (*lua_isthread) (lua_State* L, int index);
+//int lua_istable (lua_State* L, int index);  // not compiled in! (wow)
+//int (*lua_isthread) (lua_State* L, int index); // not compiled in
 int (*lua_isuserdata) (lua_State* L, int index);
 int (*lua_len) (lua_State* L, int index);
 int (*lua_load) (lua_State* L,
@@ -64,21 +64,21 @@ int (*lua_load) (lua_State* L,
 								 const char* source,
 								 const char* mode);
 int (*lua_newstate) (lua_Alloc f, void* ud);
-void (*lua_newtable) (lua_State* L);
+//void (*lua_newtable) (lua_State* L);
 lua_State* (*lua_newthread) (lua_State* L);
 void* (*lua_newuserdata) (lua_State* L, size_t size);
 int (*lua_next) (lua_State* L, int index);
-int (*lua_pcall) (lua_State* L, int nargs, int nresults, int msgh);
+//int lua_pcall (lua_State* L, int nargs, int nresults, int msgh);
 int (*lua_pcallk) (lua_State* L, int nargs, int nresults, int errfunc, int ctx, lua_CFunction k);
-void (*lua_pop) (lua_State* L, int n);
+//void (*lua_pop) (lua_State* L, int n);
 void (*lua_pushboolean) (lua_State* L, int b);
 void (*lua_pushcclosure) (lua_State* L, lua_CFunction fn, int n);
-void (*lua_pushcfunction) (lua_State* L, lua_CFunction f);
+//void lua_pushcfunction (lua_State* L, lua_CFunction f); // not compiled in (yikes)
 void (*lua_pushfstring) (lua_State *L, const char* fmt, ...); // uses sprintf yay!
-void (*lua_pushglobaltable) (lua_State* L);
+//void lua_pushglobaltable (lua_State* L); // not compiled in!
 void (*lua_pushinteger) (lua_State* L, lua_Integer n);
 void (*lua_pushlightuserdata) (lua_State* L, void* p);
-const char* (*lua_pushliteral) (lua_State* L, const char* s);
+//const char* lua_pushliteral (lua_State* L, const char* s);  // not compiled in
 const char* (*lua_pushlstring) (lua_State* L, const char* s, size_t len);
 void (*lua_pushnil) (lua_State* L);
 void (*lua_pushnumber) (lua_State* L), lua_Number n);
@@ -95,41 +95,41 @@ size_t (*lua_rawlen) (lua_State* L, int index);
 void (*lua_rawset) (lua_State* L, int index);
 void (*lua_rawseti) (lua_State* L, int index, int n);
 void (*lua_rawsetp) (lua_State* L, int index, const void* p);
-void (*lua_register) (lua_State* L, const char* name, lua_CFunction f);
+#define lua_register(L,n,f)  ((*lua_pushcfunction)(L,f), (*lua_setglobal)(L,n))
 void (*lua_remove) (lua_State* L, int index);
 void (*lua_replace) (lua_State* L, int index);
-int (*lua_resume) (lua_State* L, lua_State* from, int nargs);
+//int (*lua_resume) (lua_State* L, lua_State* from, int nargs); // not compiled in
 void (*lua_setallocf) (lua_State* L, lua_Alloc f, void* ud);
 void (*lua_setfield) (lua_State* L, int index, const char* k);
 void (*lua_setglobal) (lua_State* L, const char* name);
 void (*lua_setmetatable) (lua_State* L, int index);
 void (*lua_settable) (lua_State* L, int index);
 void (*lua_settop) (lua_State* L, int index);
-//lua_setupvalue
 void (*lua_setuservalue) (lua_State* L, int index);
 int (*lua_status) (lua_State* L);
+// lua_tablesize wube-provided
+// lua_tableresize wube-provided
 int (*lua_toboolean) (lua_State* L);
 lua_CFunction (*lua_tocfunction) (lua_State* L, int index);
-lua_Integer (*lua_tointeger) (lua_State* L, int index);
+//lua_Integer lua_tointeger (lua_State* L, int index); // not compiled in
 lua_Integer (*lua_tointegerx) (lua_State* L, int index, int* isnum);
 const char* (*lua_tolstring) (lua_State* L, int index, size_t* len);
-lua_Number (*lua_tonumber) (lua_State* L, int index);
+//lua_Number lua_tonumber (lua_State* L, int index); // not compiled in
 lua_Number  (*lua_tonumberx) (lua_State* L, int index, int* isnum);
 const void* (*lua_topointer) (lua_State* L, int index);
-const char* (*lua_tostring) (lua_State* L, int index);
+//const char* lua_tostring (lua_State* L, int index); // not compiled in
 lua_State* (*lua_tothread) (lua_State* L, int index);
-lua_Unsigned (*lua_tounsigned) (lua_State* L, int index);
+//lua_Unsigned lua_tounsigned (lua_State* L, int index); // not compiled in
 lua_Unsigned (*lua_tounsignedx) (lua_State* L, int index, int* isnum);
 void* (*lua_touserdata) (lua_State* L, int index);
+// lua_traceandabort wube-provided
 int (*lua_type) (lua_State* L, int index);
 const char* (*lua_typename) (lua_State* L, int tp);
-//lua_upvalueid
 int (*lua_upvalueindex) (int i);
-// lua_upvaluejoin
 const lua_Number* (*lua_version) (lua_State* L);
 void (*lua_xmove) (lua_State* from, lua_State* to, int n);
-int (*lua_yield) (lua_State* L, int nresults);
-int (*lua_yieldk) (lua_State* L, int nresults, int ctx, lua_CFunction k);
+//int (*lua_yield) (lua_State* L, int nresults);
+//int (*lua_yieldk) (lua_State* L, int nresults, int ctx, lua_CFunction k);
 
 
 // Debug library
@@ -237,3 +237,6 @@ void (*luaL_where) (lua_State* L, int lvl);
 
 
 };
+
+// Uses nm to get addresses for all these functions.
+void bind_imports ();

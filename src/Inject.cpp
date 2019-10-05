@@ -104,6 +104,12 @@ void SymbolTable::Parse (const std::string& _path)
 	symbolTableMemo.AddSymbolTable(*this);
 }
 
+uint64_t SymbolTable::FindSymbolOffsetByName (const char* name) const
+{
+	auto entry = FindSymbolByName(name);
+	return entry->offset;
+}
+
 
 uint64_t SymbolTable::FindSymbolOffsetByPattern (const char* name_pat) const
 {
@@ -137,7 +143,18 @@ const SymbolTableEntry* SymbolTable::FindSymbolByPattern (const char* name_pat) 
 			return &it->second;
 		}
 	}
-	Throw(std::runtime_error, "Couldn't find symbol");
+	Throw(std::runtime_error, "Couldn't find symbol with pattern '%s'", name_pat);
+}
+
+
+const SymbolTableEntry* SymbolTable::FindSymbolByName (const char* name) const
+{
+	std::string sname(name);
+	auto it = symbols.find(sname);
+	if (it != symbols.end()) {
+		return &it->second;
+	}
+	Throw(std::runtime_error, "Couldn't find symbol %s", name);
 }
 
 

@@ -113,6 +113,7 @@ int main (int argc, char* argv[])
 			
 		} catch (const std::exception e) {
 			Logger::error("Main loop std::exception: %s", e.what());
+			break;
 		} catch (...) {
 			Logger::error("Unidentified exception occured");
 			break;
