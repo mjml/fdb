@@ -5,7 +5,7 @@ CXXFLAGS=-g -O0 -I. -DDEBUG -DLOGLEVEL_FACTINJECT=10 -DLOGLEVEL_WAIT=10 -DLOGLEV
 RM=rm
 LDFLAGS=-lrt -g
 
-default: factinject activestub.so
+default: factinject factstub.so
 
 clean:
 	$(RM) -rf *.o *.obj util/*.o util/*.obj factinject test? exp?
@@ -14,7 +14,7 @@ factinject: factinject.obj Inject.obj
 	$(CXX) $(LDFLAGS) -pie -ldl -rdynamic $^ -o $@
 
 factstub.so: factstub.obj Inject.obj
-	$(CXX) $(LDFLAGS) -shared -rdynamic -pthread $^ -o $@
+	$(CXX) $(LDFLAGS) -shared -fpic -rdynamic -pthread $^ -o $@
 
 test0: test0.o
 	$(CC) -g $^ -o $@
