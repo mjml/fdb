@@ -84,7 +84,7 @@ template<int Level, const char* Name>
 void Log<Level, Name, FILE>::finalize ()
 {
 	assert(file != nullptr);
-	if (!fclose(file)) { throw errno_exception(std::runtime_error); }
+	if (fclose(file)) { throw errno_exception(std::runtime_error); }
 }
 
 

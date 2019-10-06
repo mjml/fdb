@@ -1,4 +1,5 @@
 *.o
 *.obj
 factinject
+factstub.so
 exp?

@@ -99,17 +99,20 @@ int main (int argc, char* argv[])
 	
 	// spinwait
 	Logger::print("Waiting for lua to start. In Factorio, start or load a new game from the menu.");
+	WaitResult wr;
 	while (1) {
 		
 		try {
 			int stopsignal = 0;
-			factorio->Wait(&stopsignal);
-			Logger::info("Caught stop signal %d", stopsignal);
-			if (stopsignal == SIGTRAP) {
+			wr = factorio->Wait<0,0,false>(&stopsignal);
+			if (wr == WaitResult::Stopped && stopsignal == SIGTRAP) {
+				Logger::info("Caught stop signal %d", stopsignal);
 				factorio->DispatchAtStop();
-			} else {
-				Logger::error ("Tracee received signal %d", stopsignal);
+			} else if (wr == WaitResult::Trapped && stopsignal == SIGTRAP) {
+				Logger::info("Caught trap signal %d", stopsignal);
+				factorio->DispatchAtStop();
 			}
+			
 			
 		} catch (const std::exception e) {
 			Logger::error("Main loop std::exception: %s", e.what());
@@ -118,6 +121,10 @@ int main (int argc, char* argv[])
 			Logger::error("Unidentified exception occured");
 			break;
 		}
+		if (wr == WaitResult::Exited || wr == WaitResult::Terminated || wr == WaitResult::Faulted) {
+			break;
+		}
+		
 		Logger::info("Continuing.");
 		factorio->Continue();
 	}

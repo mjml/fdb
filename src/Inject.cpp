@@ -713,6 +713,19 @@ void Tracee::UnregisterBreakpoint (PBreakpoint& brkp)
 
 void Tracee::EnableBreakpoint (PBreakpoint& brkp)
 {
+	Logger::info("Enabling breakpoint at 0x%lx", brkp->addr);
+	sigset_t sm;
+	long r = 0;
+
+	
+	r = ptrace(PTRACE_GETSIGMASK, pid, reinterpret_cast<void*>(sizeof(sigset_t)), &sm);
+	if (r == -1) throw PTraceException(errno);
+	sigaddset(&sm, SIGTRAP);
+	
+	r = ptrace(PTRACE_SETSIGMASK, pid, reinterpret_cast<void*>(sizeof(sigset_t)), &sm);
+	if (r == -1) throw PTraceException(errno);
+	
+	
 	GrabText(sizeof(uint64_t), brkp->addr, reinterpret_cast<uint8_t*>(&brkp->replaced));
 	uint64_t opbrk = (brkp->replaced & ~(uint64_t)(0xff)) | 0xcc;
 	InjectText(sizeof(uint64_t), brkp->addr, reinterpret_cast<uint8_t*>(&opbrk));
@@ -722,7 +735,7 @@ void Tracee::EnableBreakpoint (PBreakpoint& brkp)
 
 void Tracee::DisableBreakpoint (PBreakpoint& brkp)
 {
-	Logger::info("Disabling breakpoint");
+	Logger::info("Disabling breakpoint at 0x%lx", brkp->addr);
 	InjectText(sizeof(uint64_t), brkp->addr, reinterpret_cast<uint8_t*>(&brkp->replaced));
 	brkp->enabled = false;
 }
@@ -754,7 +767,6 @@ WaitResult Tracee::_Wait (int* stop_signal)
 		}
 		WaitLog::debug("siginfo .si_signo=%-4d .si_errno=%-4d .si_code=0x%-4x",
 									 siginfo.si_signo, siginfo.si_errno, siginfo.si_code);
-
 		
 		if (sig == SIGTRAP) {
 			WaitLog::info("trapped with sig==SIGTRAP(5)");
