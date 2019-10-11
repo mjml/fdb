@@ -10,6 +10,9 @@ default: factinject factstub.so
 clean:
 	$(RM) -rf *.o *.obj util/*.o util/*.obj factinject test? exp?
 
+debiter: debiter.obj
+	$(CXX) $(LDFLAGS) $^ -o $@
+
 factinject: factinject.obj Inject.obj 
 	$(CXX) $(LDFLAGS) -pie -ldl -rdynamic $^ -o $@
 

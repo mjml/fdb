@@ -10,7 +10,7 @@
 #include <stdarg.h>
 #include <cassert>
 #include <stdexcept>
-#include "util/errno_exception.hpp"
+#include "errno_exception.hpp"
 
 
 enum LogLevel {
@@ -50,9 +50,9 @@ public:
 	template<typename...Ps> static void debug (const char* fmt, Ps...ps)  { log_at_level<LogLevel::DBG, Ps...> (fmt,ps...); }
 	template<typename...Ps> static void detail (const char* fmt, Ps...ps) { log_at_level<LogLevel::DETAIL,Ps...> (fmt,ps...); }
 	template<typename...Ps> static void info (const char* fmt, Ps...ps)   { log_at_level<LogLevel::INFO,Ps...> (fmt,ps...); }
-  template<typename...Ps> static void print (const char* fmt, Ps...ps)  { log_at_level<LogLevel::PRINT,Ps...> (fmt,ps...); }
+	template<typename...Ps> static void print (const char* fmt, Ps...ps)  { log_at_level<LogLevel::PRINT,Ps...> (fmt,ps...); }
 	template<typename...Ps>	static void fuss (const char* fmt, Ps...ps)   { log_at_level<LogLevel::FUSS,Ps...> (fmt,ps...); }
-  template<typename...Ps> static void warning (const char* fmt, Ps...ps) { log_at_level<LogLevel::WARNING,Ps...> (fmt,ps...); }
+	template<typename...Ps> static void warning (const char* fmt, Ps...ps) { log_at_level<LogLevel::WARNING,Ps...> (fmt,ps...); }
 	template<typename...Ps> static void error (const char* fmt, Ps...ps)  { log_at_level<LogLevel::ERROR,Ps...> (fmt,ps...); }
 	template<typename...Ps> static void critical (const char* fmt, Ps...ps) { log_at_level<LogLevel::CRITICAL,Ps...> (fmt,ps...); }
 	
@@ -125,4 +125,5 @@ inline void Log<Level,Name,Sinks...>::log_at_level (const char* fmt, Ps...ps)
 	if constexpr (Level >= Lvl) {
 		fmtprint(Lvl, fmt, ps...);
 	}
+	fmt = fmt;
 }

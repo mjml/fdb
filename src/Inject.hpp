@@ -9,9 +9,10 @@
 #include <memory>
 #include <functional>
 
+#include "util/exceptions.hpp"
 #include "factinject_logger.hpp"
 
-#ifndef _INJECT_CPP
+#ifndef INJECT_CPP
 #define EXTERN extern
 #else
 #define EXTERN
@@ -52,9 +53,9 @@ struct PTraceException : public std::exception
   constexpr static const char msg_ESRCH[] = "The specified process does not exist, or is not currently being traced by the caller, "
 		"or is not stopped (for requests that require a stopped tracee).";
 	
-	long retval;
+	int retval;
 
-	virtual const char* what() {
+	virtual const char* what() const noexcept {
 		switch(retval) {
 		case EBUSY: return msg_EBUSY;
 		case EFAULT: return msg_EFAULT;
@@ -65,8 +66,8 @@ struct PTraceException : public std::exception
 		}
 	}
 
-	PTraceException (int r) : retval(r) {}
-	~PTraceException () = default;
+	inline PTraceException (int r) : retval(r) {}
+	virtual ~PTraceException () = default;
 };
 
 struct BreakpointCtx;
@@ -74,13 +75,13 @@ struct BreakpointCtx;
 struct Breakpoint
 {
 	uint64_t   addr;
-	bool       enabled;
 	uint64_t   replaced;
 	int        cnt;
+  bool       enabled;
 	std::function<void(BreakpointCtx& ctx)> handler;
 	
-	Breakpoint (void (*f)(BreakpointCtx&) ) : addr(0), enabled(false), replaced(0), cnt(0), handler(f) {}
-	~Breakpoint ()  = default;
+	Breakpoint (void (*f)(BreakpointCtx&) ) : addr(0), replaced(0), cnt(0), enabled(false), handler(f) {}
+	virtual ~Breakpoint () = default;
 	
 	virtual void operator() (BreakpointCtx& ctx) {
 		cnt++;
@@ -177,7 +178,7 @@ struct SegInfo
 
 struct Process
 {
-	int pid;
+	pid_t pid;
 	bool parsed_symtab;
 	SymbolTable symtab;
 	bool parsed_segtab;
@@ -250,15 +251,15 @@ struct Tracee : public Process
 	
 	void RestoreRegisters (struct user* ur);
 
-	void GrabText (int size, void* addr, uint8_t* buffer) { GrabText(size, reinterpret_cast<uint64_t>(addr), buffer); }
+	void GrabText (size_t size, void* addr, uint8_t* buffer) { GrabText(size, reinterpret_cast<uint64_t>(addr), buffer); }
 
-	void GrabText (int size, uint64_t addr, uint8_t* buffer);
+	void GrabText (size_t size, uint64_t addr, uint8_t* buffer);
 	
-	void InjectText (int size, void* addr, const uint8_t* buffer) { InjectText(size, reinterpret_cast<uint64_t>(addr), buffer); }
+	void InjectText (size_t size, void* addr, const uint8_t* buffer) { InjectText(size, reinterpret_cast<uint64_t>(addr), buffer); }
 	
-	void InjectText (int size, uint64_t addr, const uint8_t* buffer);
+	void InjectText (size_t size, uint64_t addr, const uint8_t* buffer);
 	
-	void InjectAndRunText (int size, const uint8_t* text);
+	void InjectAndRunText (size_t size, const uint8_t* text);
 	
 	void RegisterBreakpoint (PBreakpoint& brkp);
 	
@@ -289,7 +290,7 @@ extern const char waitlogname[];
 extern template class Log<LOGLEVEL_WAIT,waitlogname,Logger>;
 typedef Log<LOGLEVEL_WAIT,waitlogname,Logger> WaitLog;
 
-template <int Sec=0, int USec=0, bool ThrowOnFailure=true>
+template <int Sec, int USec, bool ThrowOnFailure>
 inline WaitResult Tracee::Wait (int* stop_signal)
 {
 	

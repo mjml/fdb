@@ -1,4 +1,4 @@
-#define _INJECT_CPP
+#define INJECT_CPP
 #include <stdio.h>
 #include <stdlib.h>
 #include <limits.h>
@@ -29,23 +29,24 @@
 const char waitlogname[] = "Tracee::Wait";
 const char breaklogname[] = "Tracee::Break";
 
-template class Log<LOGLEVEL_WAIT,waitlogname,Logger>;
+template struct Log<LOGLEVEL_WAIT,waitlogname,Logger>;
 typedef Log<LOGLEVEL_WAIT,waitlogname,Logger> WaitLog;
 
-template class Log<LOGLEVEL_RB,breaklogname,Logger>;
-typedef class Log<LOGLEVEL_RB,breaklogname,Logger> RBLog;
+template struct Log<LOGLEVEL_RB,breaklogname,Logger>;
+typedef struct Log<LOGLEVEL_RB,breaklogname,Logger> RBLog;
 
+/*
 static void print_siginfo (siginfo_t* ps)
 {
 	Logger::info("siginfo.si_signo = %d   siginfo.si_code = %d   siginfo.si_errno = %d",
 							 ps->si_signo, ps->si_code, ps->si_errno);
 }
-
+*/
 
 void SymbolTableEntry::Parse (const char* line)
 {
 	char szname[1024];
-	int c = sscanf(line, "%lx %c %1023s", &offset, &type, &szname);
+	int c = sscanf(line, "%lx %c %1023s", &offset, &type, szname);
 	if (c == 3) {
 		name = std::string(szname);
 	}
@@ -68,7 +69,7 @@ void SymbolTable::Parse (const std::string& _path)
 	snprintf(cmd, 1024, "nm %s", _path.c_str());
 	FILE* cmdout = popen(cmd, "r");
 
-	int r = 0;
+	long r = 0;
 	char* line = nullptr;
 	size_t n = 0;
 	
@@ -226,10 +227,10 @@ void Process::ParseSegmentMap ()
 		
 		mapsfile.getline(line,2047);
 		name[0] = 0;
-		int c = sscanf(line, "%lx - %lx %s %x %x:%x %d %1023s",
+		int c = sscanf(line, "%lx - %lx %s %x %hhx:%hhx %d %1023s",
 					 &segi.start,
 					 &segi.end,
-					 &segi.flags,
+					 segi.flags,
 					 &segi.offset,
 					 &segi.maj,
 					 &segi.min,
@@ -241,7 +242,7 @@ void Process::ParseSegmentMap ()
 			segtab.emplace_back(segi);
 		}
 
-		SegInfo& segi2 = segtab.back();
+		//SegInfo& segi2 = segtab.back();
 		//Logger::debug2("Seginfo: %s [0x%lx - 0x%lx]",segi2.file.c_str(), segi2.start, segi2.end);
 		
 	} while (!mapsfile.eof());
@@ -252,8 +253,6 @@ void Process::ParseSegmentMap ()
 
 uint64_t Process::FindSymbolOffsetByPattern (const char* sym_pat)
 {
-	char cmd[1024];
-
 	if (!parsed_symtab) {
 		ParseSymbolTable();
 	}
@@ -339,7 +338,7 @@ std::pair<uint64_t, uint64_t> Process::DecomposeAddress (uint64_t address)
 		return std::pair<uint64_t,uint64_t>(found_seg->start, symofs);
 	} else {
 		// generic page/offset decomposition
-		return std::pair<uint64_t,uint64_t>(address & ~0xfff, address & 0xfff);
+		return std::pair<uint64_t,uint64_t>(address & ~0xfffU, address & 0xfffU);
 	}
 }
 
@@ -372,12 +371,11 @@ std::pair<std::string, std::string> Process::DescribeAddress (uint64_t address)
 	auto& symbs = (*symtab)->symbols;
 	int mindistance = INT_MAX;
 	int distance = 0;
-	SymbolTableEntry* found_entry = nullptr;
 	std::string found_symname;
 	for (auto it = symbs.begin(); it != symbs.end(); it++) {
 		auto p = *it;
 		SymbolTableEntry& entry = p.second;
-		distance = symofs - entry.offset;
+		distance = static_cast<int>(symofs) - static_cast<int>(entry.offset);
 		if (distance > 0 && distance < mindistance) {
 			//Logger::debug2("Found symbol %s at distance 0x%x", entry.name.c_str(), distance);
 			mindistance = distance;
@@ -386,7 +384,7 @@ std::pair<std::string, std::string> Process::DescribeAddress (uint64_t address)
 	}
 	//Logger::debug2("Returning %s and %s", found_seg->file.c_str(), found_symname.c_str());
 	char decorated_symname[512];
-	snprintf(decorated_symname, 512, "%s+0x%lx", found_symname.c_str(), mindistance);
+	snprintf(decorated_symname, 512, "%s+0x%lx", found_symname.c_str(), static_cast<unsigned long>(mindistance));
 	return std::pair(found_seg->file, std::string(decorated_symname));
 }
 
@@ -400,7 +398,7 @@ Tracee* Tracee::FindByNamePattern (const char* regex_pattern)
 	
 	DIR* procdir = opendir("/proc");
 	struct dirent* de = readdir(procdir);
-	while (de) {
+	while (de && !result) {
 		int pid = atoi(de->d_name);
 		if (!pid) {
 			de = readdir(procdir);
@@ -417,15 +415,24 @@ Tracee* Tracee::FindByNamePattern (const char* regex_pattern)
 		if (regexec(&regex, str.c_str(), 0, nullptr, 0) == 0) {
 			results++;
 			if (!result) {
-				result = pid;
+				char statuspathfn[1024];
+				snprintf(statuspathfn, 1024, "/proc/%d/status", pid);
+				std::fstream fs2(statuspathfn, std::ios::in);
+				int tgid = 0;
+				char line[1024];
+				while (fs2.good()) {
+					fs2.getline(line, 1024);
+					if (sscanf(line, "Tgid: %d", &tgid) == 1) { // ensures we get the thread group leader
+						result = tgid;
+						break;
+					}
+				}
 			}
 		}
-		
+
 		fs.close();
 		de = readdir(procdir);
 	}
-
-	
 	
 	closedir(procdir);
 	
@@ -449,7 +456,7 @@ void Tracee::Attach ()
 
 void Tracee::SaveRegisters (struct user* ur)
 {
-	int r = 0;
+	long r = 0;
 	if (r = ptrace(PTRACE_GETREGS, pid, 0, &ur->regs); r == -1) {
 		throw PTraceException(errno);
 	}
@@ -462,7 +469,7 @@ void Tracee::SaveRegisters (struct user* ur)
 
 void Tracee::RestoreRegisters (struct user* ur)
 {
-	int r = 0;
+	long r = 0;
 	if (r = ptrace(PTRACE_SETREGS, pid, 0, &ur->regs); r  == -1) {
 		throw PTraceException(errno);
 	}
@@ -474,7 +481,7 @@ void Tracee::RestoreRegisters (struct user* ur)
 
 std::tuple<WaitResult, struct user> Tracee::Break ()
 {
-	int r = 0;
+	long r = 0;
 
 	RBLog::info("sending interrupt to %d.", pid);
 	if (r = ptrace(PTRACE_INTERRUPT,pid,0,0); r  == -1) {
@@ -535,7 +542,7 @@ std::tuple<WaitResult, struct user> Tracee::Break ()
 			
 			RBLog::detail("STOPPED. rip=0x%-12lx rbp=0x%-12lx rsp=0x%-12lx stopsig=0x%-4x", ur.regs.rip, ur.regs.rbp, ur.regs.rsp, stopsig);
 			
-			bool extrabit1 = (siginfo.si_code >> 7) & 0x1;  // seems to agree with the syscall flag in WSTOPSIG(wstatus)
+			//bool extrabit1 = (siginfo.si_code >> 7) & 0x1;  // seems to agree with the syscall flag in WSTOPSIG(wstatus)
 			ptrace_event = (siginfo.si_code >> 8);
 
 			rbp = ur.regs.rbp;
@@ -543,7 +550,7 @@ std::tuple<WaitResult, struct user> Tracee::Break ()
 			if (sig == SIGTRAP) {
 				RBLog::debug("syscall=%s ptrace_event=0x%-2x", syscall?"true":"false", ptrace_event);
 				if (syscall) {
-					enter = ur.regs.rax == -ENOSYS;
+					enter = ur.regs.rax == static_cast<unsigned long long>(-ENOSYS);
 					if (enter) {
 						RBLog::debug("syscall-enter-stop");
 					} else {
@@ -569,7 +576,6 @@ std::tuple<WaitResult, struct user> Tracee::Break ()
 			
 			
 			if (RBLog::level > LogLevel::INFO) { // sanity check: what segment is rip in?
-				bool found_segment = false;
 				auto [ segofs, symofs ] = DecomposeAddress(ur.regs.rip);
 				auto [ segname, symname ] = DescribeAddress(ur.regs.rip);
 				RBLog::info("break landed in segment: %s(0x%lx) symbol: %s(0x%lx)", segname.c_str(), segofs, symname.c_str(), symofs);
@@ -622,21 +628,21 @@ void Tracee::Continue ()
 }
 
 
-void Tracee::GrabText (int size, uint64_t addr, uint8_t* buffer)
+void Tracee::GrabText (size_t size, uint64_t addr, uint8_t* buffer)
 {
 	assert (size % sizeof(long) == 0);
 	
-	for (int i=0; i < size; i += sizeof(long)) {
+	for (size_t i=0; i < size; i += sizeof(long)) {
 		long r = ptrace(PTRACE_PEEKTEXT, pid, addr+i, NULL);
 		if (r == -1) {
 			throw std::runtime_error("Unexpected -1 returned from ptrace(PTRACE_PEEKTEXT, ...)");
 		}
-		*(long*)(buffer+i) = r;
+		*reinterpret_cast<long*>(buffer+i) = r;
 	}
 }
 
 
-void Tracee::InjectText (int size, uint64_t rip, const uint8_t* text)
+void Tracee::InjectText (size_t size, uint64_t rip, const uint8_t* text)
 {
 	// Note that 'text' is a pointer to codetext,
 	// but that what POKETEXT wants is an actual _value_ passed as its second parameter, but cast as a void*.
@@ -645,8 +651,9 @@ void Tracee::InjectText (int size, uint64_t rip, const uint8_t* text)
 	
 	assert (size % sizeof(long) == 0);
 	
-	for (int i=0; i < size; i += sizeof(long)) {
-		if (long result = ptrace(PTRACE_POKETEXT, pid, rip+i, (void*)*(uint64_t*)(text+i) ); result == -1) {
+	for (size_t i=0; i < size; i += sizeof(uint64_t)) {
+		if (long result = ptrace(PTRACE_POKETEXT, pid, rip+i,
+                             reinterpret_cast<void*>(*reinterpret_cast<const uint64_t*>(text+i))); result == -1) {
 			throw PTraceException(errno);
 		}
 	}
@@ -654,7 +661,7 @@ void Tracee::InjectText (int size, uint64_t rip, const uint8_t* text)
 
 
 
-void Tracee::InjectAndRunText (int size, const uint8_t* text)
+void Tracee::InjectAndRunText (size_t size, const uint8_t* text)
 {
   long r = 0;
 	struct user regset;
@@ -662,8 +669,8 @@ void Tracee::InjectAndRunText (int size, const uint8_t* text)
 	/* save state */
 	SaveRegisters(&regset);
 
-	void* rip = (void*)regset.regs.rip;
-	uint8_t* savebuf = (uint8_t*)alloca(size);
+	void* rip = reinterpret_cast<void*>(regset.regs.rip);
+	uint8_t* savebuf = reinterpret_cast<uint8_t*>(alloca(size));
 	memset(savebuf, 0, size);
 	GrabText(size, rip, savebuf);
 
@@ -680,7 +687,7 @@ void Tracee::InjectAndRunText (int size, const uint8_t* text)
 	 */
 	siginfo_t siginfo;
 	do {
-		if (int result = waitid(P_PID, pid, &siginfo, WSTOPPED); result == -1) {
+		if (int result = waitid(P_PID, static_cast<unsigned int>(pid), &siginfo, WSTOPPED); result == -1) {
 			errno_exception(std::runtime_error);
 		}
 		
@@ -693,7 +700,7 @@ void Tracee::InjectAndRunText (int size, const uint8_t* text)
 																	"Unrecognized signal 0x%x detected after stop", siginfo.si_code);
 	} while (siginfo.si_code != CLD_STOPPED);
 
-	InjectText(size, (void*)regset.regs.rip, savebuf);
+	InjectText(size, reinterpret_cast<void*>(regset.regs.rip), savebuf);
 	RestoreRegisters(&regset);
 
 }
@@ -714,20 +721,22 @@ void Tracee::UnregisterBreakpoint (PBreakpoint& brkp)
 void Tracee::EnableBreakpoint (PBreakpoint& brkp)
 {
 	Logger::info("Enabling breakpoint at 0x%lx", brkp->addr);
-	sigset_t sm;
-	long r = 0;
 
-	
+	/*
+  sigset_t sm;
+
+  long r = 0;
+
 	r = ptrace(PTRACE_GETSIGMASK, pid, reinterpret_cast<void*>(sizeof(sigset_t)), &sm);
 	if (r == -1) throw PTraceException(errno);
 	sigaddset(&sm, SIGTRAP);
 	
 	r = ptrace(PTRACE_SETSIGMASK, pid, reinterpret_cast<void*>(sizeof(sigset_t)), &sm);
 	if (r == -1) throw PTraceException(errno);
-	
+	*/
 	
 	GrabText(sizeof(uint64_t), brkp->addr, reinterpret_cast<uint8_t*>(&brkp->replaced));
-	uint64_t opbrk = (brkp->replaced & ~(uint64_t)(0xff)) | 0xcc;
+	uint64_t opbrk = (brkp->replaced & ~0xffU) | 0xcc;
 	InjectText(sizeof(uint64_t), brkp->addr, reinterpret_cast<uint8_t*>(&opbrk));
 	brkp->enabled = true;
 }
@@ -807,10 +816,8 @@ void Tracee::DispatchAtStop ()
 	// get the ip
 	struct user ur;
 	uint64_t rip = 0;
-	uint64_t rdi = 0;
 	SaveRegisters(&ur);
 	rip = ur.regs.rip - 1;     // -1 to move back past the 0xcc stop instruction
-	bool user_disable = false; // true if the breakpoint handler flips the enabled bit to false
 	
 	if (auto srch = brkpts.find(rip); srch != brkpts.end()) {
 		
@@ -843,19 +850,18 @@ void Tracee::DispatchAtStop ()
 
 auto Tracee::Inject_dlopen (const char* shlib_path, uint32_t flags) -> pointer
 {
-	const int arg2_offset = 8;
-	const int arg1_offset = 40;
-	const int funcaddr_offset = 22;
+	const unsigned int arg2_offset = 8;
+	const unsigned int arg1_offset = 40;
+	const unsigned int funcaddr_offset = 22;
 	const int bufsz = 256;
 	uint8_t buffer[bufsz];
 	uint8_t saved[bufsz];
 	struct user ur;
 	uint64_t rip;
-	uint8_t r;
 	
 	// create the injected blob
 	memset(buffer, 0, bufsz);
-	memcpy(buffer, (uint8_t*)
+	memcpy(buffer,
 				 "\x48\x81\xec\x00\x01\x00\x00"              // sub    $0x100, $rsp
 				 "\xbe\x02\x00\x00\x00"                      // mov    $0x2,%esi
 				 "\x48\x8d\x3d\x14\x00\x00\x00"              // lea    0x14(%rip),%rdi
@@ -863,13 +869,13 @@ auto Tracee::Inject_dlopen (const char* shlib_path, uint32_t flags) -> pointer
 				 "\xff\xd0"                                  // call   *%rax
 				 "\xcc"                                      // int    3
 				 , 32);
-	strncpy((char*)buffer + arg1_offset, shlib_path, bufsz-arg1_offset);
-	*(int32_t*)(buffer+arg2_offset) = flags;
+	strncpy(reinterpret_cast<char*>(buffer) + arg1_offset, shlib_path, bufsz-arg1_offset);
+	*reinterpret_cast<uint32_t*>(buffer+arg2_offset) = flags;
 	
 	// amend the blob with the sum of the segment address and symbol address of the target function
 	uint64_t symaddr = FindSymbolAddressByPattern("/libdl", "__dlopen");
 	
-	*((uint64_t*)(buffer+funcaddr_offset)) = symaddr;
+	*(reinterpret_cast<uint64_t*>(buffer+funcaddr_offset)) = symaddr;
 	Logger::detail("dlopen is located at 0x%lx", symaddr);
 	
 	SaveRegisters (&ur);
@@ -886,6 +892,9 @@ auto Tracee::Inject_dlopen (const char* shlib_path, uint32_t flags) -> pointer
 	Logger::print("Waiting for tracee to stop...");
 	int sig;
 	auto result = Wait(&sig);
+  if (result != WaitResult::Stopped && result != WaitResult::Trapped) {
+    Throw(std::runtime_error,"Expecting trapped program state, got %d", result);
+  }
 	
 	struct user ur2;
 	SaveRegisters(&ur2);
@@ -914,9 +923,7 @@ auto Tracee::Inject_dlsym (const char* szsymbol) -> pointer
 	uint8_t buffer[bufsz];
 	uint8_t saved[bufsz];
 	struct user ur;
-	void *rip, *rip2;
-	void *rbp;
-	uint8_t r;
+	void *rip;
 
 	// find dlsym's address and name
 	auto seg = FindSegmentByPattern("/libdl", "--x-");
@@ -932,22 +939,22 @@ auto Tracee::Inject_dlsym (const char* szsymbol) -> pointer
 	
 	// create the injected blob
 	memset(buffer, 0, bufsz);
-	memcpy(buffer, (uint8_t*)
+	memcpy(buffer,
 				 "\x48\x8d\x3d\x20\x00\x00\x00"              // lea    0x20(%rip),%rdi
 				 "\x48\xb8\x01\x02\x03\x04\x05\x06\x07\x08"  // mov    $0x0807060504030201, %rax
 				 "\xff\xd0"                                  // call   *%rax
 				 "\xcc"                                      // int    3
 				 , 20);
-	strncpy((char*)((uint8_t*)buffer + arg1_offset), symbol->name.c_str(), bufsz-arg1_offset);
+	strncpy(reinterpret_cast<char*>(buffer) + arg1_offset, szsymbol, bufsz-arg1_offset);
 	
 	// amend the blob with the sum of the segment address and symbol address of the target function
-	*((uint64_t*)(buffer+funcaddr_offset)) = seg->start + symbol->offset;
+	*(reinterpret_cast<uint64_t*>(buffer+funcaddr_offset)) = seg->start + symbol->offset;
 	Logger::info("dlsym (%s) is located at 0x%lx", symbol->name, seg->start + symbol->offset);
 	
 	// save remote registers and existing rip text
 	SaveRegisters(&ur);
 	
-	rip = (void*)ur.regs.rip;
+	rip = reinterpret_cast<void*>(ur.regs.rip);
 	GrabText (bufsz, rip, saved);
 
 	// inject the blob
@@ -979,29 +986,26 @@ auto Tracee::Inject_dlsym (const char* szsymbol) -> pointer
 
 auto Tracee::Inject_dlerror () -> pointer
 {
-	const int arg1_offset = 32;
   const int funcaddr_offset = 2;
 	const int bufsz = 512;
 	uint8_t buffer[bufsz];
 	uint8_t saved[bufsz];
 	struct user ur;
-	void *rip, *rip2;
-	void *rbp;
-	uint8_t r;
+	void *rip = nullptr;
 	
 	// find dlsym's address and name
 	uint64_t symaddr = FindSymbolAddressByPattern("/libdl", "__dlerror");
 	
 	// create the injected blob
 	memset(buffer, 0, bufsz);
-	memcpy(buffer, (uint8_t*)
+	memcpy(buffer,
 				 "\x48\xb8\x01\x02\x03\x04\x05\x06\x07\x08"  // mov    $0x0807060504030201, %rax
 				 "\xff\xd0"                                  // call   *%rax
 				 "\xcc"                                      // int    3
 				 , 13);
 	
 	// amend the blob with the sum of the segment address and symbol address of the target function
-	*((uint64_t*)(buffer+funcaddr_offset)) = symaddr;
+	*(reinterpret_cast<uint64_t*>(buffer+funcaddr_offset)) = symaddr;
 	Logger::info("dlerror is located at 0x%lx", symaddr);
 	
 	// save remote registers and existing rip text
@@ -1030,7 +1034,7 @@ auto Tracee::Inject_dlerror () -> pointer
 	// peek the block of text that contains the error into a big buffer
 	if (result) {
 		char dlerrmsg[512];
-		GrabText(512,(void*)(result),(uint8_t*)(dlerrmsg));
+		GrabText(512,reinterpret_cast<void*>(result),reinterpret_cast<uint8_t*>(dlerrmsg));
 		dlerrmsg[511] = 0;
 		Logger::warning("dlerror returned: %s", dlerrmsg);
 	}

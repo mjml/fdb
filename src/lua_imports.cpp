@@ -1,25 +1,28 @@
+#define __LUA_IMPORTS_CPP
 #include "lua_imports.hpp"
 #include "Inject.hpp"
 #include "factstub_logger.hpp"
 
 #define SAFE_BIND(s) \
 	try { \
-		lua_imports::s = tracee->FindSymbolAddressByPattern(#s);	\
-  } catch (std::exception e) { \
-    Logger::warning(e.what()); \ 
+		s = reinterpret_cast<decltype(s)>(tracee->FindSymbolAddressByPattern(#s)); \
+  } catch (const std::exception& e) { \
+    Logger::warning("Couldn't bind symbol: %s", e.what()); \
   } 
 
 /*
 #define BIND(s) \
-	lua_imports::s = tracee->FindSymbolAddressByPattern(#s)
+	s = reinterpret_cast<decltype(s)>(tracee->FindSymbolAddressByPattern(#s));
 */
 #define BIND(s) SAFE_BIND(s)
 
 void bind_imports (Tracee* tracee)
 {
+  using namespace lua_imports;
+
 	BIND(lua_arith)
-		BIND(lua_atpanic)
-		BIND(lua_callk)
+    BIND(lua_atpanic)
+    BIND(lua_callk)
 		BIND(lua_checkstack)
 		BIND(lua_close)
 		BIND(lua_compare)
