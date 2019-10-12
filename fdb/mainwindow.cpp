@@ -21,18 +21,21 @@ MainWindow::MainWindow(QWidget *parent) :
   factorioDock->setWindowTitle("factorio");
   factorioDock->setAllowedAreas(Qt::TopDockWidgetArea | Qt::BottomDockWidgetArea);
   factorioDock->setIoView(QTerminalDock::IoView::OUT_ONLY);
+  factorioDock->setFeatures(QDockWidget::DockWidgetClosable | QDockWidget::DockWidgetFloatable | QDockWidget::DockWidgetMovable);
   addDockWidget(Qt::BottomDockWidgetArea, factorioDock);
 
   gdbDock = new QTerminalDock(this);
   gdbDock->setWindowTitle("gdb");
   gdbDock->setAllowedAreas(Qt::TopDockWidgetArea | Qt::BottomDockWidgetArea);
   gdbDock->setIoView(QTerminalDock::IoView::IN_AND_OUT);
+  gdbDock->setFeatures(QDockWidget::DockWidgetClosable | QDockWidget::DockWidgetFloatable | QDockWidget::DockWidgetMovable);
   addDockWidget(Qt::BottomDockWidgetArea, gdbDock);
 
   gmiDock = new QTerminalDock(this);
   gmiDock->setWindowTitle("gdb/mi");
   gmiDock->setAllowedAreas(Qt::TopDockWidgetArea | Qt::BottomDockWidgetArea);
   gmiDock->setIoView(QTerminalDock::IoView::OUT_ONLY);
+  gmiDock->setFeatures(QDockWidget::DockWidgetClosable | QDockWidget::DockWidgetFloatable | QDockWidget::DockWidgetMovable);
   addDockWidget(Qt::BottomDockWidgetArea, gmiDock);
   gmiDock->hide();
 
@@ -41,7 +44,7 @@ MainWindow::MainWindow(QWidget *parent) :
   QMainWindow::tabifyDockWidget(factorioDock,  gdbDock);
   //QMainWindow::tabifyDockWidget(gdbDock,   gmiDock);
 
-
+  initialize_actions();
 }
 
 
