@@ -3,8 +3,7 @@
 
 #include <QDockWidget>
 #include <QLabel>
-#include <QPlainTextEdit>
-#include <QCheckBox>
+#include <QLabel>
 
 template <typename T>
 struct widget_traits {};
@@ -15,20 +14,17 @@ public:
   QOptionsTitleBar();
   ~QOptionsTitleBar();
 
-  void add (QWidget* w);
-
-  /*  -- not sure all this specialization is rly necessary
-  void add (QLabel* lbl);
-
-  void add (QPlainTextEdit* edit);
-
-  void add (QCheckBox* cb);
-  */
-
   QLabel* label;
+
 };
 
 
+/**
+ *   Provides an augmented QDockWidget with the ability to add widgets into a titlebar with a QHBoxLayout layout.
+ * Not to be used with the vertical title bar flag.
+ *
+ * @brief Augments QDockWidget with a titlebar that serves as a container, in addition to a label.
+ */
 class QOptionsDock : public QDockWidget
 {
 
@@ -41,10 +37,6 @@ public:
 
 public:
   virtual void setWindowTitle (const QString& title);
-
-protected:
-  virtual void resizeEvent (QResizeEvent* event);
-
 
 };
 

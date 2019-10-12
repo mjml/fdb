@@ -34,6 +34,7 @@ SOURCES += \
         ../src/lua_imports.cpp \
         ../src/util/log.cpp \
         gui/QOptionsDock.cpp \
+        gui/QTerminalDock.cpp \
         gui/QTerminalProcess.cpp \
         gui/QTerminalWidget.cpp \
         main.cpp \
@@ -49,6 +50,7 @@ HEADERS += \
         ../src/util/exceptions.hpp \
         ../src/util/log.hpp \
         gui/QOptionsDock.h \
+        gui/QTerminalDock.h \
         gui/QTerminalProcess.h \
         gui/QTerminalWidget.h \
         mainwindow.h

@@ -12,8 +12,6 @@ MainWindow::MainWindow(QWidget *parent) :
 {
   ui->setupUi(this);
 
-  // Programmatic Fixups:
-
   // Join together (tabify) the debug consoles dock widgets
   QMainWindow::tabifyDockWidget(ui->stdoutDock,  ui->gdbmiDock);
   QMainWindow::tabifyDockWidget(ui->gdbmiDock,   ui->gdbDock);

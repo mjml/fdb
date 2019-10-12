@@ -1,14 +1,21 @@
 #include <QBoxLayout>
-#include <QPushButton>
+
 #include "gui/QOptionsDock.h"
 
 
 QOptionsTitleBar::QOptionsTitleBar ()
+  : QWidget(), label(nullptr)
 {
-  auto lyt = new QHBoxLayout();
+  QFont heading = QFont(QStringLiteral("Monospace"),6);
+
+
   label = new QLabel();
   label->setText("test");
-  label->setFont(QFont(QStringLiteral("Lucida Console"),11));
+  label->setTextFormat(Qt::PlainText);
+  label->setFont(heading);
+  label->setStyleSheet("color:black");
+
+  QHBoxLayout* lyt = new QHBoxLayout();
   setLayout(lyt);
   lyt->addWidget(label);
 }
@@ -18,13 +25,6 @@ QOptionsTitleBar::~QOptionsTitleBar ()
 {
 }
 
-
-void QOptionsTitleBar::add (QWidget *w)
-{
-  QFont myfont = QFont(QStringLiteral("Deja Vu Sans"),7);
-  w->setFont(myfont);
-
-}
 
 
 QOptionsDock::QOptionsDock ()
@@ -54,14 +54,5 @@ void QOptionsDock::setWindowTitle (const QString &title)
   auto label = titleBar->label;
   QDockWidget::setWindowTitle(title);
   label->setText(title);
-}
-
-
-void QOptionsDock::resizeEvent (QResizeEvent *event)
-{
-  QSize szcopy = event->size();
-  szcopy.rwidth() -= 4;
-  titleBar->resize(szcopy);
-  titleBar->move(2,2);
 }
 

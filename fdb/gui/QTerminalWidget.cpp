@@ -1,14 +1,19 @@
 #include <QLayout>
 #include <QPlainTextEdit>
+#include <QProcess>
 #include <sys/ioctl.h>
 
 #include "gui/QTerminalWidget.h"
 #include "util/exceptions.hpp"
 
 
-QTerminalWidget::QTerminalWidget (QWidget *parent) : QWidget(parent)
+QTerminalWidget::QTerminalWidget (QWidget *parent)
+  : QWidget(parent)
 {
+}
 
+QTerminalWidget::~QTerminalWidget ()
+{
 }
 
 struct winsize QTerminalWidget::getTerminalDimensions ()
@@ -38,5 +43,29 @@ struct winsize QTerminalWidget::getTerminalDimensions ()
 
   return win;
 
+}
+
+
+void QTerminalWidget::onErrorOccurred (QProcess::ProcessError error)
+{
+
+}
+
+
+void QTerminalWidget::onFinished (int exitcode, QProcess::ExitStatus status)
+{
+
+}
+
+
+void QTerminalWidget::onStateChanged (QProcess::ProcessState newState)
+{
+
+}
+
+
+bool QTerminalWidget::event (QEvent *event)
+{
+  return QWidget::event(event);
 }
 

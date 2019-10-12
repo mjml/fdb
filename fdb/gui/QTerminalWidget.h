@@ -2,18 +2,25 @@
 #define QTERMINALWIDGET_H
 
 #include <QWidget>
+#include <QProcess>
 #include <sys/ioctl.h>
 
-class QTerminalWidget : public QWidget
+struct QTerminalWidget : public QWidget
 {
   Q_OBJECT
 public:
   explicit QTerminalWidget(QWidget *parent = nullptr);
+  virtual ~QTerminalWidget();
 
-signals:
+  struct winsize getTerminalDimensions ();
 
 public slots:
-  struct winsize getTerminalDimensions ();
+  void onErrorOccurred (QProcess::ProcessError error);
+  void onFinished (int exitcode, QProcess::ExitStatus status);
+  void onStateChanged (QProcess::ProcessState newState);
+
+protected:
+  virtual bool event (QEvent* event) override;
 
 };
 
