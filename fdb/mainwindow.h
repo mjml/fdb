@@ -3,9 +3,9 @@
 
 #include <QMainWindow>
 #include <QPlainTextEdit>
-#include <gui/QTerminalDock.h>
+#include "util/log.hpp"
+#include "gui/QTerminalDock.h"
 
-// hacked working directory
 
 namespace Ui {
 class MainWindow;

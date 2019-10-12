@@ -7,6 +7,7 @@
 #include "gui/QTerminalDock.h"
 
 
+
 MainWindow::MainWindow(QWidget *parent) :
   QMainWindow(parent),
   ui(new Ui::MainWindow),
@@ -45,6 +46,8 @@ MainWindow::MainWindow(QWidget *parent) :
   //QMainWindow::tabifyDockWidget(gdbDock,   gmiDock);
 
   initialize_actions();
+
+  initialize_gdb();
 }
 
 
@@ -61,6 +64,9 @@ void MainWindow::initialize_actions()
 
   connect(ui->actionShow_GDB_terminal, &QAction::triggered,
           this, [&]() { gdbDock->show(); addDockWidget(Qt::BottomDockWidgetArea, gdbDock); });
+
+  connect(ui->actionRestart_GDB, &QAction::triggered,
+          this, &MainWindow::start_gdb);
 }
 
 void MainWindow::initialize_factorio()
@@ -108,8 +114,11 @@ void MainWindow::initialize_gdb()
 void MainWindow::start_gdb()
 {
   assert_re(gdbProc, "No gdbProc set!");
+  Logger::print("Starting gdb...");
 
+  gdbDock->startIOThread();
   gdbProc->start(QStringLiteral("/bin/gdb"));
+
 }
 
 void MainWindow::restart_gdb()

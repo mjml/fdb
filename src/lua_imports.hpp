@@ -248,3 +248,5 @@ EXTERN void (*luaL_where) (lua_State* L, int lvl);
 
 // Uses nm to get addresses for all these functions.
 void bind_imports ();
+
+#undef EXTERN

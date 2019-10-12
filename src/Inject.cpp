@@ -21,7 +21,6 @@
 
 #include "util/microsleep.h"
 #include "util/exceptions.hpp"
-#include "factinject_logger.hpp"
 #include "Inject.hpp"
 
 

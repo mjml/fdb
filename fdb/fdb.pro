@@ -30,7 +30,6 @@ QMAKE_CXXFLAGS += -std=c++17
 
 SOURCES += \
         ../src/Inject.cpp \
-        ../src/factstub.cpp \
         ../src/lua_imports.cpp \
         ../src/util/log.cpp \
         gui/QOptionsDock.cpp \
@@ -41,9 +40,6 @@ SOURCES += \
 
 HEADERS += \
         ../src/Inject.hpp \
-        ../src/debiter.hpp \
-        ../src/factinject_logger.hpp \
-        ../src/factstub_logger.hpp \
         ../src/lua_imports.hpp \
         ../src/util/errno_exception.hpp \
         ../src/util/exceptions.hpp \

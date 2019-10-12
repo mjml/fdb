@@ -65,6 +65,8 @@ public:
    */
   void startIOThread ();
 
+  void stopIOThread();
+
   /**
    * @brief Called in a separate thread to read from the output fd and post events back to this object in the GUI thread.
    */

@@ -127,3 +127,12 @@ inline void Log<Level,Name,Sinks...>::log_at_level (const char* fmt, Ps...ps)
 	}
 	fmt = fmt;
 }
+
+
+extern const char stdoutname[];
+extern template struct Log<12,stdoutname,FILE>;
+typedef Log<3,stdoutname,FILE> StdioSink;
+
+extern const char applogname[];
+extern template struct Log<12,applogname,StdioSink>;
+typedef Log<12,applogname,StdioSink> Logger;

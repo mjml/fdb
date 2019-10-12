@@ -5,9 +5,11 @@
 #include <QPushButton>
 #include <QBoxLayout>
 #include <QCoreApplication>
+#include <QThread>
 #include "gui/QTerminalIOEvent.h"
 #include "gui/QTerminalDock.h"
 #include "util/exceptions.hpp"
+#include "util/log.hpp"
 
 QEvent::Type QTerminalDock::terminalOutputEventType;
 
@@ -96,7 +98,7 @@ QTerminalDock::~QTerminalDock ()
 
 struct winsize QTerminalDock::terminalDimensions ()
 {
-  QLayout* lyt = this->layout();
+  QLayout* lyt = this->widget()->layout();
 
   for (int i=0; i < lyt->count(); i++) {
     QWidget* editctl = lyt->itemAt(i)->widget();
@@ -155,6 +157,24 @@ void QTerminalDock::setupEPoll()
 
   int r = epoll_ctl(_epoll, EPOLL_CTL_ADD, _fds.fdin, &eev);
   assert_re(r==0, "Error during EPOLL_CTL_ADD: %s", strerror(errno));
+}
+
+void QTerminalDock::startIOThread()
+{
+  _iothread = QThread::create(std::bind(&QTerminalDock::performIO, this));
+  _iothread->start();
+}
+
+void QTerminalDock::stopIOThread()
+{
+  if(!_iothread->isRunning()) {
+    Logger::warning("Tried to stop _iothread but it isn't even running!");
+  }
+  _iothread->terminate();
+  if (_iothread->wait(2000)) {
+    delete _iothread;
+    _iothread = nullptr;
+  }
 }
 
 void QTerminalDock::performIO()

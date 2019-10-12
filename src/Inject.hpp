@@ -2,6 +2,7 @@
 
 #include <signal.h>
 #include <time.h>
+#include <string.h>
 #include <sys/ptrace.h>
 #include <list>
 #include <map>
@@ -9,8 +10,8 @@
 #include <memory>
 #include <functional>
 
+#include "util/log.hpp"
 #include "util/exceptions.hpp"
-#include "factinject_logger.hpp"
 
 #ifndef INJECT_CPP
 #define EXTERN extern
