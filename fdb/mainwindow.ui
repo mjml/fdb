@@ -97,11 +97,18 @@
     <property name="title">
      <string>&amp;View</string>
     </property>
+    <addaction name="actionShow_Factorio_stdout"/>
+    <addaction name="actionShow_GDB_terminal"/>
+    <addaction name="actionShow_GDB_MI_terminal"/>
    </widget>
    <widget class="QMenu" name="menuProcess">
     <property name="title">
      <string>&amp;Process</string>
     </property>
+    <addaction name="actionRun_Factorio"/>
+    <addaction name="actionKill_Factorio"/>
+    <addaction name="separator"/>
+    <addaction name="actionRestart_GDB"/>
    </widget>
    <widget class="QMenu" name="menuHelp">
     <property name="title">
@@ -112,6 +119,8 @@
     <property name="title">
      <string>Window</string>
     </property>
+    <addaction name="separator"/>
+    <addaction name="actionOptions"/>
     <addaction name="separator"/>
    </widget>
    <addaction name="menuFile"/>
@@ -134,117 +143,6 @@
    <addaction name="separator"/>
   </widget>
   <widget class="QStatusBar" name="statusBar"/>
-  <widget class="QTerminalDock" name="stdoutDock">
-   <property name="sizePolicy">
-    <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-     <horstretch>0</horstretch>
-     <verstretch>0</verstretch>
-    </sizepolicy>
-   </property>
-   <property name="minimumSize">
-    <size>
-     <width>102</width>
-     <height>101</height>
-    </size>
-   </property>
-   <property name="font">
-    <font>
-     <family>DejaVu Sans</family>
-     <pointsize>7</pointsize>
-    </font>
-   </property>
-   <property name="features">
-    <set>QDockWidget::AllDockWidgetFeatures</set>
-   </property>
-   <property name="windowTitle">
-    <string>factorio</string>
-   </property>
-   <attribute name="dockWidgetArea">
-    <number>8</number>
-   </attribute>
-   <widget class="QTerminalWidget" name="stdoutContents">
-    <layout class="QGridLayout" name="gridLayout">
-     <property name="leftMargin">
-      <number>6</number>
-     </property>
-     <property name="topMargin">
-      <number>6</number>
-     </property>
-     <property name="rightMargin">
-      <number>6</number>
-     </property>
-     <property name="bottomMargin">
-      <number>6</number>
-     </property>
-     <property name="spacing">
-      <number>4</number>
-     </property>
-     <item row="0" column="0">
-      <widget class="QPlainTextEdit" name="stdoutEdit"/>
-     </item>
-    </layout>
-   </widget>
-  </widget>
-  <widget class="QTerminalDock" name="gdbDock">
-   <property name="sizePolicy">
-    <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-     <horstretch>1</horstretch>
-     <verstretch>0</verstretch>
-    </sizepolicy>
-   </property>
-   <property name="minimumSize">
-    <size>
-     <width>100</width>
-     <height>143</height>
-    </size>
-   </property>
-   <property name="font">
-    <font>
-     <family>DejaVu Sans</family>
-     <pointsize>7</pointsize>
-    </font>
-   </property>
-   <property name="features">
-    <set>QDockWidget::AllDockWidgetFeatures</set>
-   </property>
-   <property name="windowTitle">
-    <string>Debug</string>
-   </property>
-   <attribute name="dockWidgetArea">
-    <number>8</number>
-   </attribute>
-   <widget class="QTerminalWidget" name="gdbContents">
-    <property name="sizePolicy">
-     <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-      <horstretch>1</horstretch>
-      <verstretch>1</verstretch>
-     </sizepolicy>
-    </property>
-    <layout class="QVBoxLayout" name="verticalLayout_3">
-     <property name="spacing">
-      <number>4</number>
-     </property>
-     <property name="leftMargin">
-      <number>6</number>
-     </property>
-     <property name="topMargin">
-      <number>6</number>
-     </property>
-     <property name="rightMargin">
-      <number>6</number>
-     </property>
-     <property name="bottomMargin">
-      <number>6</number>
-     </property>
-     <item>
-      <widget class="QPlainTextEdit" name="gdbOutEdit"/>
-     </item>
-     <item>
-      <widget class="QLineEdit" name="gdbInEdit"/>
-     </item>
-    </layout>
-   </widget>
-  </widget>
   <widget class="QDockWidget" name="propsDock">
    <property name="sizePolicy">
     <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
@@ -310,48 +208,6 @@
         </property>
        </column>
       </widget>
-     </item>
-    </layout>
-   </widget>
-  </widget>
-  <widget class="QTerminalDock" name="gdbmiDock">
-   <property name="minimumSize">
-    <size>
-     <width>82</width>
-     <height>101</height>
-    </size>
-   </property>
-   <property name="font">
-    <font>
-     <family>DejaVu Sans</family>
-     <pointsize>7</pointsize>
-    </font>
-   </property>
-   <property name="windowTitle">
-    <string>GDB/MI</string>
-   </property>
-   <attribute name="dockWidgetArea">
-    <number>8</number>
-   </attribute>
-   <widget class="QTerminalWidget" name="gdbmiContents">
-    <layout class="QGridLayout" name="gridLayout_5">
-     <property name="leftMargin">
-      <number>6</number>
-     </property>
-     <property name="topMargin">
-      <number>6</number>
-     </property>
-     <property name="rightMargin">
-      <number>6</number>
-     </property>
-     <property name="bottomMargin">
-      <number>6</number>
-     </property>
-     <property name="spacing">
-      <number>4</number>
-     </property>
-     <item row="0" column="0">
-      <widget class="QPlainTextEdit" name="gdbmiInOutEdit"/>
      </item>
     </layout>
    </widget>
@@ -508,6 +364,41 @@
     <string>Ctrl+Space</string>
    </property>
   </action>
+  <action name="actionRun_Factorio">
+   <property name="text">
+    <string>Run Factorio</string>
+   </property>
+  </action>
+  <action name="actionKill_Factorio">
+   <property name="text">
+    <string>Kill Factorio</string>
+   </property>
+  </action>
+  <action name="actionOptions">
+   <property name="text">
+    <string>Options...</string>
+   </property>
+  </action>
+  <action name="actionShow_Factorio_stdout">
+   <property name="text">
+    <string>Show Factorio stdout</string>
+   </property>
+  </action>
+  <action name="actionShow_GDB_terminal">
+   <property name="text">
+    <string>Show GDB terminal</string>
+   </property>
+  </action>
+  <action name="actionShow_GDB_MI_terminal">
+   <property name="text">
+    <string>Show GDB/MI terminal</string>
+   </property>
+  </action>
+  <action name="actionRestart_GDB">
+   <property name="text">
+    <string>Restart GDB</string>
+   </property>
+  </action>
   <zorder>gdbDock</zorder>
   <zorder>stdoutDock</zorder>
   <zorder>propsDock</zorder>
@@ -517,20 +408,6 @@
   <zorder>filesDock</zorder>
  </widget>
  <layoutdefault spacing="6" margin="11"/>
- <customwidgets>
-  <customwidget>
-   <class>QTerminalWidget</class>
-   <extends>QWidget</extends>
-   <header location="global">gui/QTerminalWidget.h</header>
-   <container>1</container>
-  </customwidget>
-  <customwidget>
-   <class>QTerminalDock</class>
-   <extends>QDockWidget</extends>
-   <header location="global">gui/QTerminalDock.h</header>
-   <container>1</container>
-  </customwidget>
- </customwidgets>
  <resources>
   <include location="fdbresources.qrc"/>
  </resources>

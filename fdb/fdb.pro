@@ -35,8 +35,7 @@ SOURCES += \
         ../src/util/log.cpp \
         gui/QOptionsDock.cpp \
         gui/QTerminalDock.cpp \
-        gui/QTerminalProcess.cpp \
-        gui/QTerminalWidget.cpp \
+        gui/QTerminalIOEvent.cpp \
         main.cpp \
         mainwindow.cpp
 
@@ -51,13 +50,13 @@ HEADERS += \
         ../src/util/log.hpp \
         gui/QOptionsDock.h \
         gui/QTerminalDock.h \
-        gui/QTerminalProcess.h \
-        gui/QTerminalWidget.h \
+        gui/QTerminalIOEvent.h \
         mainwindow.h
 
 LIBS += -lutil
 
 FORMS += \
+        gui/settings.ui \
         mainwindow.ui
 
 # Default rules for deployment.
