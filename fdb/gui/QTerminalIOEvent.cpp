@@ -2,6 +2,6 @@
 #include "QTerminalIOEvent.h"
 
 QTerminalIOEvent::QTerminalIOEvent(QString&& qs)
-  : QEvent(QTerminalDock::terminalOutputEventType), text(qs)
+  : QEvent(QTerminalDock::ioEventType), text(qs)
 {
 }

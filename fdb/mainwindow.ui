@@ -100,6 +100,10 @@
     <addaction name="actionShow_Factorio_stdout"/>
     <addaction name="actionShow_GDB_terminal"/>
     <addaction name="actionShow_GDB_MI_terminal"/>
+    <addaction name="actionShow_Properties"/>
+    <addaction name="actionShow_Mods"/>
+    <addaction name="actionShow_Breakpoints"/>
+    <addaction name="actionShow_Files"/>
    </widget>
    <widget class="QMenu" name="menuProcess">
     <property name="title">
@@ -349,6 +353,30 @@
     </layout>
    </widget>
   </widget>
+  <widget class="QTerminalDock" name="gdbDock">
+   <property name="windowTitle">
+    <string>gdb</string>
+   </property>
+   <attribute name="dockWidgetArea">
+    <number>8</number>
+   </attribute>
+  </widget>
+  <widget class="QTerminalDock" name="factorioDock">
+   <property name="windowTitle">
+    <string>factorio</string>
+   </property>
+   <attribute name="dockWidgetArea">
+    <number>8</number>
+   </attribute>
+  </widget>
+  <widget class="QTerminalDock" name="gdbmiDock">
+   <property name="windowTitle">
+    <string>gdb/mi</string>
+   </property>
+   <attribute name="dockWidgetArea">
+    <number>8</number>
+   </attribute>
+  </widget>
   <action name="actionFactorioMode">
    <property name="icon">
     <iconset resource="fdbresources.qrc">
@@ -380,16 +408,31 @@
    </property>
   </action>
   <action name="actionShow_Factorio_stdout">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
    <property name="text">
     <string>Show Factorio stdout</string>
    </property>
   </action>
   <action name="actionShow_GDB_terminal">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
    <property name="text">
     <string>Show GDB terminal</string>
    </property>
   </action>
   <action name="actionShow_GDB_MI_terminal">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
    <property name="text">
     <string>Show GDB/MI terminal</string>
    </property>
@@ -399,17 +442,182 @@
     <string>Restart GDB</string>
    </property>
   </action>
-  <zorder>gdbDock</zorder>
-  <zorder>stdoutDock</zorder>
+  <action name="actionShow_Properties">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Show Properties</string>
+   </property>
+  </action>
+  <action name="actionShow_Mods">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Show Mods</string>
+   </property>
+  </action>
+  <action name="actionShow_Breakpoints">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Show Breakpoints</string>
+   </property>
+  </action>
+  <action name="actionShow_Files">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Show Files</string>
+   </property>
+  </action>
   <zorder>propsDock</zorder>
-  <zorder>gdbmiDock</zorder>
   <zorder>brkDock</zorder>
   <zorder>modDock</zorder>
   <zorder>filesDock</zorder>
+  <zorder>gdbDock</zorder>
+  <zorder>factorioDock</zorder>
+  <zorder>gdbmiDock</zorder>
  </widget>
  <layoutdefault spacing="6" margin="11"/>
+ <customwidgets>
+  <customwidget>
+   <class>QTerminalDock</class>
+   <extends>QDockWidget</extends>
+   <header>gui/QTerminalDock.h</header>
+   <container>1</container>
+  </customwidget>
+ </customwidgets>
  <resources>
   <include location="fdbresources.qrc"/>
  </resources>
- <connections/>
+ <connections>
+  <connection>
+   <sender>actionShow_Factorio_stdout</sender>
+   <signal>triggered(bool)</signal>
+   <receiver>factorioDock</receiver>
+   <slot>setVisible(bool)</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>-1</x>
+     <y>-1</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>440</x>
+     <y>722</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>actionShow_GDB_terminal</sender>
+   <signal>triggered(bool)</signal>
+   <receiver>gdbDock</receiver>
+   <slot>setVisible(bool)</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>-1</x>
+     <y>-1</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>467</x>
+     <y>722</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>actionShow_GDB_MI_terminal</sender>
+   <signal>triggered(bool)</signal>
+   <receiver>gdbmiDock</receiver>
+   <slot>setVisible(bool)</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>-1</x>
+     <y>-1</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>811</x>
+     <y>722</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>actionShow_Properties</sender>
+   <signal>triggered(bool)</signal>
+   <receiver>propsDock</receiver>
+   <slot>setVisible(bool)</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>-1</x>
+     <y>-1</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>800</x>
+     <y>210</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>actionShow_Mods</sender>
+   <signal>triggered(bool)</signal>
+   <receiver>modDock</receiver>
+   <slot>setVisible(bool)</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>-1</x>
+     <y>-1</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>133</x>
+     <y>210</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>actionShow_Breakpoints</sender>
+   <signal>triggered(bool)</signal>
+   <receiver>brkDock</receiver>
+   <slot>setVisible(bool)</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>-1</x>
+     <y>-1</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>800</x>
+     <y>511</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>actionShow_Files</sender>
+   <signal>triggered(bool)</signal>
+   <receiver>filesDock</receiver>
+   <slot>setVisible(bool)</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>-1</x>
+     <y>-1</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>133</x>
+     <y>511</y>
+    </hint>
+   </hints>
+  </connection>
+ </connections>
 </ui>

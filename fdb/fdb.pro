@@ -32,11 +32,14 @@ SOURCES += \
         ../src/Inject.cpp \
         ../src/lua_imports.cpp \
         ../src/util/log.cpp \
+        FactorioProcess.cpp \
         gui/QOptionsDock.cpp \
         gui/QTerminalDock.cpp \
         gui/QTerminalIOEvent.cpp \
         main.cpp \
-        mainwindow.cpp
+        mainwindow.cpp \
+        mainwindow_actions.cpp \
+        util/GDBProcess.cpp
 
 HEADERS += \
         ../src/Inject.hpp \
@@ -44,10 +47,13 @@ HEADERS += \
         ../src/util/errno_exception.hpp \
         ../src/util/exceptions.hpp \
         ../src/util/log.hpp \
+        ../src/util/safe_deque.hpp \
+        FactorioProcess.h \
         gui/QOptionsDock.h \
         gui/QTerminalDock.h \
         gui/QTerminalIOEvent.h \
-        mainwindow.h
+        mainwindow.h \
+        util/GDBProcess.h
 
 LIBS += -lutil
 
@@ -56,6 +62,10 @@ FORMS += \
         mainwindow.ui
 
 # Default rules for deployment.
+debug {
+  DEFINES += DEBUG
+}
+
 qnx: target.path = /tmp/$${TARGET}/bin
 else: unix:!android: target.path = /opt/$${TARGET}/bin
 !isEmpty(target.path): INSTALLS += target

@@ -1,5 +1,7 @@
 #include <sys/ioctl.h>
 #include <sys/epoll.h>
+#include <stdlib.h>
+#include <fcntl.h>
 #include <unistd.h>
 #include <utility>
 #include <QPushButton>
@@ -10,14 +12,17 @@
 #include "gui/QTerminalDock.h"
 #include "util/exceptions.hpp"
 #include "util/log.hpp"
+#include "util/safe_deque.hpp"
 
-QEvent::Type QTerminalDock::terminalOutputEventType;
+QEvent::Type QTerminalDock::ioEventType;
 
 QTerminalDock::QTerminalDock()
-  : QOptionsDock (), lszbtn(nullptr), lszedit(nullptr),
+  : QOptionsDock (), ioview(OUT_ONLY),
+    lszbtn(nullptr), lszedit(nullptr),
     freezeChk(nullptr),
-    outEdit(nullptr), inEdit(nullptr),
-    _process(nullptr), ioview(OUT_ONLY)
+    inEdit(nullptr), outEdit(nullptr),
+    _ptfd(0), _epoll(0),
+    _iothread(nullptr)
 {
   QFont mini(QStringLiteral("Monospace"),5);
 
@@ -82,8 +87,10 @@ QTerminalDock::QTerminalDock()
   clientWidget->setLayout(lyt);
   setWidget(clientWidget);
   clientWidget->show();
-  show();
+
+  connect(inEdit, &QLineEdit::returnPressed, this, &QTerminalDock::returnPressed);
 }
+
 
 QTerminalDock::QTerminalDock (QWidget *parent)
   : QTerminalDock()
@@ -91,9 +98,25 @@ QTerminalDock::QTerminalDock (QWidget *parent)
   this->setParent(parent);
 }
 
+
 QTerminalDock::~QTerminalDock ()
 {
+  if (_iothread) {
+    stopIOThread();
+  }
 
+  _ptfd = 0;
+  destroyPty();
+
+  if (_epoll) {
+    ::close(_epoll);
+    _epoll = 0;
+  }
+}
+
+const QString QTerminalDock::ptyname()
+{
+   return QString(::ptsname(_ptfd));
 }
 
 struct winsize QTerminalDock::terminalDimensions ()
@@ -124,6 +147,7 @@ struct winsize QTerminalDock::terminalDimensions ()
 
 }
 
+
 void QTerminalDock::setIoView(QTerminalDock::IoView _view)
 {
   if (_view == IoView::IN_AND_OUT) {
@@ -134,43 +158,74 @@ void QTerminalDock::setIoView(QTerminalDock::IoView _view)
   outEdit->setReadOnly(_view != IoView::COMBINED);
 }
 
+
 void QTerminalDock::registerEventTypes()
 {
-  terminalOutputEventType = static_cast<QEvent::Type>(QEvent::registerEventType(-1));
+  ioEventType = static_cast<QEvent::Type>(QEvent::registerEventType(-1));
 }
+
 
 bool QTerminalDock::event(QEvent *e)
 {
-  if (e->type() == terminalOutputEventType) {
+  if (e->type() == ioEventType) {
     auto qte = static_cast<QTerminalIOEvent*>(e);
     onTerminalOutput(qte->text);
   }
   return QWidget::event(e);
 }
 
-void QTerminalDock::setupEPoll()
+
+void QTerminalDock::createPty()
 {
+  destroyPty();
+
+  _ptfd = getpt();
+  if (_ptfd == -1) errno_runtime_error;
+
+  unlockpt(_ptfd);
+
+  struct winsize win = terminalDimensions();
+
+  int r = ioctl(_ptfd, TIOCSWINSZ, &win);
+  assert_re(r==0, "Couldn't set window size on the pseudoterminal (%s)", strerror(errno));
+
   _epoll = epoll_create(1);
   struct epoll_event eev;
   memset(&eev, 0, sizeof(struct epoll_event));
+  eev.data.fd = _ptfd;
   eev.events |= EPOLLIN;
 
-  int r = epoll_ctl(_epoll, EPOLL_CTL_ADD, _fds.fdin, &eev);
+  r = epoll_ctl(_epoll, EPOLL_CTL_ADD, _ptfd, &eev);
   assert_re(r==0, "Error during EPOLL_CTL_ADD: %s", strerror(errno));
+}
+
+void QTerminalDock::destroyPty()
+{
+  // actually closing the fd is the sole responsibility of the slave
+  _ptfd = 0;
 }
 
 void QTerminalDock::startIOThread()
 {
+  if (_iothread) {
+    Logger::warning("Tried to create/start QTerminalDock::_iothread, but it already has a value.");
+  }
   _iothread = QThread::create(std::bind(&QTerminalDock::performIO, this));
   _iothread->start();
 }
 
 void QTerminalDock::stopIOThread()
 {
+  if (!_iothread) {
+    Logger::warning("Tried to stop _iothread but it is nullptr");
+    return;
+  }
   if(!_iothread->isRunning()) {
     Logger::warning("Tried to stop _iothread but it isn't even running!");
   }
+
   _iothread->terminate();
+
   if (_iothread->wait(2000)) {
     delete _iothread;
     _iothread = nullptr;
@@ -180,26 +235,94 @@ void QTerminalDock::stopIOThread()
 void QTerminalDock::performIO()
 {
   int r = 0;
-  int n = 0; // bytes read
+  long n = 0; // bytes read
   struct epoll_event eev;
   char rdbuf[4096];
+
   while (1) {
     try {
       r = epoll_wait(_epoll, &eev, 1, -1);
       if (r && (eev.events & EPOLLIN)) {
-        n = read(_fds.fdin, rdbuf, 4095);
+        n = ::read(eev.data.fd, rdbuf, 4095);
         rdbuf[n] = 0;
-        QString text = QString::fromLatin1(rdbuf,n);
+        QString text = QString::fromLatin1(rdbuf,static_cast<int>(n));
         auto ev = new QTerminalIOEvent(std::forward<QString>(text));
         QCoreApplication::postEvent(this, ev);
+      } else if (r && (eev.events & EPOLLOUT)) {
+        inputQueue.fast_lock();
+        if (inputQueue.size() > 0) {
+          const QString* qs = inputQueue.pop_back();
+          int written = 0;
+          while (written < qs->size()) {
+            ssize_t rw = ::write(eev.data.fd, qs->toLatin1().data() + written, static_cast<size_t>(qs->size()));
+            assert_re(rw != -1, "Write error while writing to a pseudoterminal descriptor: %s", strerror(errno));
+            written += rw;
+          }
+          delete qs;
+        }        
+        if (inputQueue.empty()) {
+          struct epoll_event eev2;
+          memset(&eev2, 0, sizeof(struct epoll_event));
+          eev2.events = EPOLLIN; // i.e.: removing EPOLLOUT
+          epoll_ctl(_epoll, EPOLL_CTL_MOD, eev.data.fd, &eev2);
+        }
+        inputQueue.fast_unlock();
+      } else if (r == -1 && errno == EINTR) {
+        // we get here following debugger breakpoint activity
+        // but also during external termination
       }
 
     } catch (const std::exception& e) {
-      QString text(e.what());
+      char msg[1024];
+      snprintf(msg, 1023, "Critical exception in IOThread: %s", e.what());
+      QString text(msg);
+      auto ev = new QTerminalIOEvent(std::forward<QString>(text));
+      QCoreApplication::postEvent(this,ev);
     }
-
   }
 }
+
+void QTerminalDock::windowSizeChanged (const struct winsize& newSize)
+{
+  int r = ioctl(_ptfd, TIOCGWINSZ, &newSize);
+  if (r) throw errno_runtime_error;
+}
+
+void QTerminalDock::windowSizeChanged (unsigned short rows, unsigned short cols)
+{
+  struct winsize ws;
+  memset(&ws,0,sizeof(struct winsize));
+  ws.ws_col = cols;
+  ws.ws_row = rows;
+  windowSizeChanged(ws);
+}
+
+
+void QTerminalDock::writeInput (const QString& qs)
+{
+  if (!_ptfd)  return;
+  inputQueue.safe_emplace_front(qs);
+  struct epoll_event eev;
+  memset(&eev, 0, sizeof(struct epoll_event));
+  eev.events = EPOLLIN | EPOLLOUT;
+  eev.data.fd = _ptfd;
+  int r = epoll_ctl(_epoll, EPOLL_CTL_MOD, _ptfd, &eev);
+  assert_re(r > -1, "Error while modifying epoll for terminal output: %s", strerror(errno));
+}
+
+void QTerminalDock::returnPressed()
+{
+  QString text = inEdit->text();
+  if (text.trimmed().size() == 0) {
+    inEdit->clear();
+    return;
+  }
+  Logger::debug("Input received: %s", text.toLatin1().data());
+  inEdit->clear();
+  writeInput(text);
+  input(text);
+}
+
 
 void QTerminalDock::logSizeLabelClicked (bool checked)
 {
@@ -219,7 +342,6 @@ void QTerminalDock::logSizeEdited ()
 {
   QString qs = lszedit->text();
 
-  // TODO: store this size somewhere, or modify the edit controls
   auto sz = qs.toInt();
   if (sz < 10) {
     sz = 0;
@@ -235,22 +357,8 @@ void QTerminalDock::logSizeEdited ()
 
 void QTerminalDock::onTerminalOutput (const QString &qs)
 {
+  // this signal will be emitted by the new QTerminalDock instead
   output(qs);
   outEdit->insertPlainText(qs);
-}
-
-void QTerminalDock::onErrorOccurred (QProcess::ProcessError error)
-{
-
-}
-
-void QTerminalDock::onFinished (int exitcode, QProcess::ExitStatus status)
-{
-
-}
-
-void QTerminalDock::onStateChanged (QProcess::ProcessState newState)
-{
-
 }
 

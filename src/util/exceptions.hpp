@@ -6,6 +6,7 @@
 #define DEBUG false
 #endif
 
+#include "errno_exception.hpp"
 
 template<class E>
 inline void assert_e (bool condition, const char* fmt, ...)
