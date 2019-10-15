@@ -93,9 +93,9 @@ public slots:
 
   /**
    * @brief Writes a string of text to this process' stdin.
-   * @param qs A QString of text. Should end with a linefeed, but not necessary.
+   * @param qs A QString of text. A carriage return will be appended if needed.
    */
-  void writeInput (const QString& qs);
+  void writeInput (QString& qs);
 
   /**
    * @brief This is the handler for the input line edit control

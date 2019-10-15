@@ -3,11 +3,13 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <pty.h>
 #include <utility>
 #include <QPushButton>
 #include <QBoxLayout>
 #include <QCoreApplication>
 #include <QThread>
+#include <QScrollBar>
 #include "gui/QTerminalIOEvent.h"
 #include "gui/QTerminalDock.h"
 #include "util/exceptions.hpp"
@@ -75,6 +77,7 @@ QTerminalDock::QTerminalDock()
   outEdit->setReadOnly(true);
   outEdit->setFont(trmfont);
   outEdit->setMinimumHeight(32);
+  outEdit->setCenterOnScroll(true);
 
   inEdit = new QLineEdit(clientWidget);
   inEdit->setFont(trmfont);
@@ -89,6 +92,7 @@ QTerminalDock::QTerminalDock()
   clientWidget->show();
 
   connect(inEdit, &QLineEdit::returnPressed, this, &QTerminalDock::returnPressed);
+
 }
 
 
@@ -178,23 +182,22 @@ bool QTerminalDock::event(QEvent *e)
 void QTerminalDock::createPty()
 {
   destroyPty();
+  struct winsize win = terminalDimensions();
 
+  // problematic, seems to randomize certain ty behaviours
   _ptfd = getpt();
   if (_ptfd == -1) errno_runtime_error;
-
-  unlockpt(_ptfd);
-
-  struct winsize win = terminalDimensions();
 
   int r = ioctl(_ptfd, TIOCSWINSZ, &win);
   assert_re(r==0, "Couldn't set window size on the pseudoterminal (%s)", strerror(errno));
 
+  unlockpt(_ptfd);
+
   _epoll = epoll_create(1);
   struct epoll_event eev;
   memset(&eev, 0, sizeof(struct epoll_event));
-  eev.data.fd = _ptfd;
   eev.events |= EPOLLIN;
-
+  eev.data.fd = _ptfd;
   r = epoll_ctl(_epoll, EPOLL_CTL_ADD, _ptfd, &eev);
   assert_re(r==0, "Error during EPOLL_CTL_ADD: %s", strerror(errno));
 }
@@ -254,17 +257,22 @@ void QTerminalDock::performIO()
           const QString* qs = inputQueue.pop_back();
           int written = 0;
           while (written < qs->size()) {
-            ssize_t rw = ::write(eev.data.fd, qs->toLatin1().data() + written, static_cast<size_t>(qs->size()));
+            ssize_t rw = ::write(_ptfd, qs->toLatin1().data() + written, static_cast<size_t>(qs->size()));
             assert_re(rw != -1, "Write error while writing to a pseudoterminal descriptor: %s", strerror(errno));
             written += rw;
           }
+          QString disp = *qs;
+          disp = disp.replace('\r', "\\r");
+          disp = disp.replace('\n', "\\n");
+          Logger::debug("Input sent: %s", disp.toLatin1().data());
           delete qs;
         }        
         if (inputQueue.empty()) {
           struct epoll_event eev2;
           memset(&eev2, 0, sizeof(struct epoll_event));
           eev2.events = EPOLLIN; // i.e.: removing EPOLLOUT
-          epoll_ctl(_epoll, EPOLL_CTL_MOD, eev.data.fd, &eev2);
+          eev2.data.fd = _ptfd;
+          epoll_ctl(_epoll, EPOLL_CTL_MOD, _ptfd, &eev2);
         }
         inputQueue.fast_unlock();
       } else if (r == -1 && errno == EINTR) {
@@ -275,6 +283,7 @@ void QTerminalDock::performIO()
     } catch (const std::exception& e) {
       char msg[1024];
       snprintf(msg, 1023, "Critical exception in IOThread: %s", e.what());
+      Logger::critical(msg);
       QString text(msg);
       auto ev = new QTerminalIOEvent(std::forward<QString>(text));
       QCoreApplication::postEvent(this,ev);
@@ -298,16 +307,17 @@ void QTerminalDock::windowSizeChanged (unsigned short rows, unsigned short cols)
 }
 
 
-void QTerminalDock::writeInput (const QString& qs)
+void QTerminalDock::writeInput (QString& qs)
 {
   if (!_ptfd)  return;
+  if (!qs.endsWith(('\n'))) qs += '\n';
   inputQueue.safe_emplace_front(qs);
   struct epoll_event eev;
   memset(&eev, 0, sizeof(struct epoll_event));
   eev.events = EPOLLIN | EPOLLOUT;
   eev.data.fd = _ptfd;
   int r = epoll_ctl(_epoll, EPOLL_CTL_MOD, _ptfd, &eev);
-  assert_re(r > -1, "Error while modifying epoll for terminal output: %s", strerror(errno));
+  assert_re(r != -1, "Error while modifying epoll for terminal output: %s", strerror(errno));
 }
 
 void QTerminalDock::returnPressed()
@@ -317,7 +327,6 @@ void QTerminalDock::returnPressed()
     inEdit->clear();
     return;
   }
-  Logger::debug("Input received: %s", text.toLatin1().data());
   inEdit->clear();
   writeInput(text);
   input(text);
@@ -360,5 +369,8 @@ void QTerminalDock::onTerminalOutput (const QString &qs)
   // this signal will be emitted by the new QTerminalDock instead
   output(qs);
   outEdit->insertPlainText(qs);
+  if (freezeChk->checkState() == Qt::CheckState::Unchecked) {
+    outEdit->ensureCursorVisible();
+  }
 }
 

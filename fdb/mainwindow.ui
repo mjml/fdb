@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>935</width>
-    <height>806</height>
+    <width>1580</width>
+    <height>960</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -81,7 +81,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>935</width>
+     <width>1580</width>
      <height>22</height>
     </rect>
    </property>
@@ -109,8 +109,6 @@
     <property name="title">
      <string>&amp;Process</string>
     </property>
-    <addaction name="actionRun_Factorio"/>
-    <addaction name="actionKill_Factorio"/>
     <addaction name="separator"/>
     <addaction name="actionRestart_GDB"/>
    </widget>
@@ -144,6 +142,7 @@
     <bool>false</bool>
    </attribute>
    <addaction name="actionFactorioMode"/>
+   <addaction name="actionRestart_GDB"/>
    <addaction name="separator"/>
   </widget>
   <widget class="QStatusBar" name="statusBar"/>
@@ -392,16 +391,6 @@
     <string>Ctrl+Space</string>
    </property>
   </action>
-  <action name="actionRun_Factorio">
-   <property name="text">
-    <string>Run Factorio</string>
-   </property>
-  </action>
-  <action name="actionKill_Factorio">
-   <property name="text">
-    <string>Kill Factorio</string>
-   </property>
-  </action>
   <action name="actionOptions">
    <property name="text">
     <string>Options...</string>
@@ -438,8 +427,15 @@
    </property>
   </action>
   <action name="actionRestart_GDB">
+   <property name="icon">
+    <iconset resource="fdbresources.qrc">
+     <normaloff>:/resources/icons/gdb-button.svg</normaloff>:/resources/icons/gdb-button.svg</iconset>
+   </property>
    <property name="text">
     <string>Restart GDB</string>
+   </property>
+   <property name="toolTip">
+    <string>This restarts the debugging engine.</string>
    </property>
   </action>
   <action name="actionShow_Properties">

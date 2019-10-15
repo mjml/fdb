@@ -14,13 +14,20 @@ MainWindow::MainWindow(QWidget *parent) :
   QMainWindow(parent),
   ui(new Ui::MainWindow),
   gdb(this),
-  factorio(this)
+  factorio(this),
+  initialized(false)
 {
   ui->setupUi(this);
 
   ui->gdbmiDock->hide();
 
   initialize_actions();
+
+  QObject::connect(&factorio, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+                   [=](int exitCode, QProcess::ExitStatus exitStatus){
+    ui->actionFactorioMode->setEnabled(true);
+    ui->actionFactorioMode->setText("Run Factorio");
+  });
 
 }
 
@@ -46,6 +53,8 @@ void MainWindow::start_factorio()
     return;
   }
 
+  ui->actionFactorioMode->setEnabled(false);
+  ui->actionFactorioMode->setText("Factorio is running...");
   ui->factorioDock->createPty();
   ui->factorioDock->startIOThread();
   Logger::fuss("Factorio pseudoterminal is on %s", ui->factorioDock->ptyname().toLatin1().data());
@@ -69,10 +78,12 @@ void MainWindow::kill_factorio()
 void MainWindow::restart_gdb()
 {
   if (gdb.state() == QProcess::Starting) {
+    Logger::warning("Refusing to start gdb because process is just starting...");
     return;
   }
 
   if (gdb.state() == QProcess::Running) {
+    Logger::warning("Restarting running gdb...");
     kill_gdb();
     QTimer::singleShot(2500, this, &MainWindow::restart_gdb);
     return;
@@ -81,7 +92,7 @@ void MainWindow::restart_gdb()
   ui->gdbDock->createPty();
   ui->gdbDock->startIOThread();
 
-  Logger::fuss("Pseudoterminal is on %s, starting gdb...", ui->gdbDock->ptyname().toLatin1().data());
+  Logger::print("Starting gdb with pseudoterminal on %s", ui->gdbDock->ptyname().toLatin1().data());
 
   gdb.setStandardInputFile(ui->gdbDock->ptyname().toLatin1());
   gdb.setStandardOutputFile(ui->gdbDock->ptyname().toLatin1());
@@ -91,17 +102,6 @@ void MainWindow::restart_gdb()
 
   gdb.start("/bin/gdb -ex \"set pagination off\"");
 
-  /*
-  QtConcurrent::run([this]{
-    if (gdb.waitForStarted(10000)) {
-      qint64 pid = gdb.processId();
-      Logger::fuss("gdb started with pid %lld", pid);
-    } else {
-      Logger::error("Timeout waiting for gdb to start (10s)");
-      kill_gdb();
-    }
-  });
-*/
 }
 
 void MainWindow::kill_gdb()
@@ -111,5 +111,26 @@ void MainWindow::kill_gdb()
   ui->gdbDock->destroyPty();
   gdb.kill();
   gdb.waitForFinished(-1);
+}
+
+void MainWindow::parse_gdb_lines(const QString &qs)
+{
+
+}
+
+void MainWindow::parse_factorio_lines(const QString &qs)
+{
+  if (qs.contains("Factorio initialised")) {
+    Logger::info("Factorio initialization is complete.");
+  }
+}
+
+void MainWindow::showEvent(QShowEvent *event)
+{
+  QMainWindow::showEvent(event);
+  if (!initialized) {
+    restart_gdb();
+    initialized = true;
+  }
 }
 

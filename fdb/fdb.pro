@@ -72,3 +72,6 @@ else: unix:!android: target.path = /opt/$${TARGET}/bin
 
 RESOURCES += \
     fdbresources.qrc
+
+DISTFILES += \
+    resources/icons/gdb-button.svg

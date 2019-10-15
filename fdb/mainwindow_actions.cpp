@@ -12,4 +12,11 @@ void MainWindow::initialize_actions()
 
   connect(ui->actionRestart_GDB, &QAction::triggered,
        this, &MainWindow::restart_gdb);
+
+  connect(ui->actionFactorioMode, &QAction::triggered,
+          this, &MainWindow::start_factorio);
+
+  connect(ui->gdbDock, &QTerminalDock::output, this, &MainWindow::parse_gdb_lines);
+
+  connect(ui->factorioDock, &QTerminalDock::output, this, &MainWindow::parse_factorio_lines);
 }

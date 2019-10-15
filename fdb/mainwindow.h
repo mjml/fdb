@@ -31,6 +31,7 @@ private:
 
   GDBProcess gdb;
   FactorioProcess factorio;
+  bool initialized = false;
 
 public slots:
   void start_factorio();
@@ -40,6 +41,13 @@ public slots:
   void restart_gdb();
 
   void kill_gdb();
+
+  void parse_gdb_lines(const QString& qs);
+
+  void parse_factorio_lines(const QString& qs);
+
+protected:
+  virtual void showEvent(QShowEvent* event) override;
 };
 
 #endif // MAINWINDOW_H
