@@ -54,7 +54,7 @@ explicit text_response(int tries, std::string& s, Functor F) -> text_response<Fu
 
 struct text_responder
 {
-	typedef std::list<base_text_response*> reponse_list;
+	typedef std::list<base_text_response*> response_list;
 
 	response_list lst;
 
