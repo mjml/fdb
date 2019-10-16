@@ -19,4 +19,7 @@ void MainWindow::initialize_actions()
   connect(ui->gdbDock, &QTerminalDock::output, this, &MainWindow::parse_gdb_lines);
 
   connect(ui->factorioDock, &QTerminalDock::output, this, &MainWindow::parse_factorio_lines);
+
+  connect(ui->gdbmiDock, &QTerminalDock::output, this, &MainWindow::parse_gdbmi_lines);
 }
+

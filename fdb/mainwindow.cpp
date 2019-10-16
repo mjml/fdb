@@ -16,11 +16,12 @@ MainWindow::MainWindow(QWidget *parent) :
   gdb(this),
   factorio(this),
   fState(ProgramStart),
-  gState(ProgramStart)
+  gState(ProgramStart),
+  gdbmiGiver(nullptr)
 {
   ui->setupUi(this);
 
-  ui->gdbmiDock->hide();
+  //ui->gdbmiDock->hide();
 
   initialize_actions();
 
@@ -48,6 +49,8 @@ MainWindow::~MainWindow()
     gState = NotRunning;
   }
   delete ui;
+
+  if (gdbmiGiver) delete gdbmiGiver;
 }
 
 
@@ -143,10 +146,27 @@ void MainWindow::attach_gdbmi()
 
   Logger::print("Creating gdb/mi terminal on %s", name);
 
-  char cmd[1024];
-  snprintf(cmd, 1023, "new-ui mi2 %s", name);
-  QString qscmd = QString::fromLatin1(cmd);
-  ui->gdbDock->writeInput(qscmd);
+  if (gdbmiGiver) delete gdbmiGiver;
+  using namespace std::placeholders;
+  gdbmiGiver = new coro_t::push_type( [&](coro_t::pull_type& taker) {
+
+      auto tmev = taker.get();
+      char cmd[1024];
+      snprintf(cmd, 1023, "new-ui mi2 %s", name);
+      QString qscmd = QString::fromLatin1(cmd);
+      ui->gdbDock->writeInput(qscmd);
+
+      if (!taker()) {
+        return;
+      }
+      tmev = taker.get();
+      Logger::print("Received from gdbmi: %s", tmev.qs.toLatin1().data());
+  });
+
+  Logger::debug("gdbmiGiver about to run for first time...");
+  TerminalEvent tev;
+  (*gdbmiGiver)(tev);
+
 }
 
 void MainWindow::parse_gdb_lines(const QString &qs)
@@ -174,6 +194,14 @@ void MainWindow::parse_factorio_lines(const QString &qs)
     integrate();
   }
 
+}
+
+void MainWindow::parse_gdbmi_lines(const QString &qs)
+{
+  TerminalEvent tev(qs);
+  if (*gdbmiGiver)  {
+    (*gdbmiGiver)(tev);
+  }
 }
 
 void MainWindow::showEvent(QShowEvent *event)

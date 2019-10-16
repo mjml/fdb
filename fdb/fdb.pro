@@ -56,7 +56,7 @@ HEADERS += \
         mainwindow.h \
         util/GDBProcess.h
 
-LIBS += -lutil
+LIBS += -lutil -lboost_coroutine -lboost_context
 
 FORMS += \
         gui/settings.ui \
