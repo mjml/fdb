@@ -48,6 +48,7 @@ HEADERS += \
         ../src/util/exceptions.hpp \
         ../src/util/log.hpp \
         ../src/util/safe_deque.hpp \
+        ../src/util/text_response.hpp \
         FactorioProcess.h \
         gui/QOptionsDock.h \
         gui/QTerminalDock.h \
