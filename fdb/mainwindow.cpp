@@ -15,7 +15,8 @@ MainWindow::MainWindow(QWidget *parent) :
   ui(new Ui::MainWindow),
   gdb(this),
   factorio(this),
-  initialized(false)
+  fState(ProgramStart),
+  gState(ProgramStart)
 {
   ui->setupUi(this);
 
@@ -37,10 +38,12 @@ MainWindow::~MainWindow()
   if (factorio.state() == QProcess::Running) {
     factorio.terminate();
     factorio.waitForFinished();
+    fState = NotRunning;
   }
   if (gdb.state() == QProcess::Running) {
     gdb.terminate();
     gdb.waitForFinished();
+    gState = NotRunning;
   }
   delete ui;
 }
@@ -57,7 +60,7 @@ void MainWindow::start_factorio()
   ui->actionFactorioMode->setText("Factorio is running...");
   ui->factorioDock->createPty();
   ui->factorioDock->startIOThread();
-  Logger::fuss("Factorio pseudoterminal is on %s", ui->factorioDock->ptyname().toLatin1().data());
+  Logger::print("Starting Factorio with pseudoterminal on %s", ui->factorioDock->ptyname().toLatin1().data());
 
   factorio.setStandardOutputFile(ui->factorioDock->ptyname().toLatin1().data());
   factorio.setStandardErrorFile(ui->factorioDock->ptyname().toLatin1().data());
@@ -65,7 +68,7 @@ void MainWindow::start_factorio()
   // TODO: create a better way to manage engine versions / builds / deployments / etc.
   factorio.setWorkingDirectory("/home/joya");
   factorio.start("/home/joya/games/factorio/bin/x64/factorio");
-
+  fState = Initializing;
 }
 
 void MainWindow::kill_factorio()
@@ -101,6 +104,7 @@ void MainWindow::restart_gdb()
   // gdb.setWorkingDirectory("..?..");
 
   gdb.start("/bin/gdb -ex \"set pagination off\"");
+  gState = Initializing;
 
 }
 
@@ -113,24 +117,69 @@ void MainWindow::kill_gdb()
   gdb.waitForFinished(-1);
 }
 
+void MainWindow::integrate()
+{
+  Logger::info("Integrating factorio with debugger logic.");
+}
+
+void MainWindow::attach_gdbmi()
+{
+  if (gdb.state() != QProcess::Running) {
+    Logger::warning("gdb isn't running, can't attach gdb/mi terminal");
+    return;
+  }
+  if (gState != Initialized) {
+    Logger::warning("gdb hasn't fully initialized, can't attach gdb/mi terminal");
+    return;
+  }
+
+  ui->gdbmiDock->createPty();
+  ui->gdbmiDock->startIOThread();
+
+  auto ba = ui->gdbmiDock->ptyname().toLatin1();
+  char* name = ba.data();
+
+  Logger::print("Creating gdb/mi terminal on %s", name);
+
+  char cmd[1024];
+  snprintf(cmd, 1023, "new-ui mi2 %s", name);
+  QString qscmd = QString::fromLatin1(cmd);
+  ui->gdbDock->writeInput(qscmd);
+}
+
 void MainWindow::parse_gdb_lines(const QString &qs)
 {
-
+  bool combinedInitialized = (gState == Initialized) && (fState == Initialized);
+  if (gState != Initialized && qs.contains("(gdb)")) {
+    gState = Initialized;
+    attach_gdbmi();
+  }
+  if (!combinedInitialized && (gState == Initialized && fState == Initialized)) {
+    // integration edge
+    integrate();
+  }
 }
 
 void MainWindow::parse_factorio_lines(const QString &qs)
 {
-  if (qs.contains("Factorio initialised")) {
+  bool combinedInitialized = (gState == Initialized) && (fState == Initialized);
+  if (fState != Initialized && qs.contains("Factorio initialised.")) {
+    fState = Initialized;
     Logger::info("Factorio initialization is complete.");
   }
+  if (!combinedInitialized && (gState == Initialized && fState == Initialized)) {
+    // integration edge
+    integrate();
+  }
+
 }
 
 void MainWindow::showEvent(QShowEvent *event)
 {
   QMainWindow::showEvent(event);
-  if (!initialized) {
+  if (gState == ProgramStart) {
     restart_gdb();
-    initialized = true;
+    gState = Initializing;
   }
 }
 

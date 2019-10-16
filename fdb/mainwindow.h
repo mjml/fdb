@@ -7,7 +7,7 @@
 #include "FactorioProcess.h"
 #include <QMainWindow>
 #include <QPlainTextEdit>
-
+#include <map>
 
 
 namespace Ui {
@@ -31,7 +31,14 @@ private:
 
   GDBProcess gdb;
   FactorioProcess factorio;
-  bool initialized = false;
+  enum ProgState {
+    ProgramStart,
+    NotRunning,
+    Initializing,
+    Initialized
+  } fState, gState;
+
+
 
 public slots:
   void start_factorio();
@@ -42,12 +49,19 @@ public slots:
 
   void kill_gdb();
 
+  void integrate ();
+
+  void attach_gdbmi();
+
   void parse_gdb_lines(const QString& qs);
 
   void parse_factorio_lines(const QString& qs);
 
 protected:
   virtual void showEvent(QShowEvent* event) override;
+
 };
+
+
 
 #endif // MAINWINDOW_H
