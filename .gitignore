@@ -3,5 +3,5 @@
 factinject
 factstub.so
 exp?
-*.pro.user
+*.pro.user*
 builds/
