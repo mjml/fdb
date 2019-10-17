@@ -24,11 +24,13 @@ MainWindow::MainWindow(QWidget *parent) :
 
   initialize_actions();
 
+#pragma GCC diagnostic ignored "-Wunused-parameter"
   QObject::connect(&factorio, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
                    [=](int exitCode, QProcess::ExitStatus exitStatus){
     ui->actionFactorioMode->setEnabled(true);
     ui->actionFactorioMode->setText("Run Factorio");
   });
+#pragma GCC diagnostic warning "-Wunused-parameter"
 
 }
 

@@ -118,6 +118,7 @@ inline void Log<Level, Name, Sinks...>::fmtprint (int lvl, const char* fmt, Ps..
 	write(entry,chrs);
 }
 
+#pragma GCC diagnostic ignored "-Wunused-but-set-parameter"
 template<int Level, const char* Name, typename...Sinks>
 template<int Lvl, typename...Ps>
 inline void Log<Level,Name,Sinks...>::log_at_level (const char* fmt, Ps...ps)
@@ -125,14 +126,6 @@ inline void Log<Level,Name,Sinks...>::log_at_level (const char* fmt, Ps...ps)
 	if constexpr (Level >= Lvl) {
 		fmtprint(Lvl, fmt, ps...);
 	}
-	fmt = fmt;
+
 }
 
-
-extern const char stdoutname[];
-extern template struct Log<12,stdoutname,FILE>;
-typedef Log<3,stdoutname,FILE> StdioSink;
-
-extern const char applogname[];
-extern template struct Log<12,applogname,StdioSink>;
-typedef Log<12,applogname,StdioSink> Logger;

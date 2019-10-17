@@ -1,4 +1,5 @@
-#pragma once
+#ifndef FDB_LOGGER_HPP
+#define FDB_LOGGER_HPP
 
 #include "util/log.hpp"
 #include <stdio.h>
@@ -19,14 +20,4 @@ extern template class Log<LOGLEVEL_FACTINJECT,applogname,StdioSink,MainLogFileSi
 typedef Log<LOGLEVEL_FACTINJECT,applogname,StdioSink,MainLogFileSink> Logger;
 
 
-
-// Feature loggers that reuse the same sinks as the main logger,
-//   but with their own compile-time / runtime level. 
-//
-// Ex:
-//   extern const char featurename[] = "myfeature";
-//   extern template class Log<LOGLEVEL_MYFEATURE,featurename, Logger>;
-//   typedef Log<LOGLEVEL_MYFEATURE,featurename,Logger>  MyFeatureLog;
-//   ...
-//   MyFeatureLog::print("Feature 1 init");
-
+#endif // FDB_LOGGER_HPP

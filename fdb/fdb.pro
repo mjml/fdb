@@ -15,7 +15,7 @@ TEMPLATE = app
 # any feature of Qt which has been marked as deprecated (the exact warnings
 # depend on your compiler). Please consult the documentation of the
 # deprecated API in order to know how to port your code away from it.
-DEFINES += QT_DEPRECATED_WARNINGS "LOGLEVEL_FACTINJECT=12"
+DEFINES += QT_DEPRECATED_WARNINGS
 
 INCLUDEPATH += ../src
 
@@ -64,8 +64,12 @@ FORMS += \
 
 # Default rules for deployment.
 debug {
+  QMAKE_CXXFLAGS_DEBUG += -I../../fdb -I../../src -include fdb_logger_debug.hpp
+  HEADERS += fdb_logger_debug.hpp
   DEFINES += DEBUG
+  DEFINES += LOGLEVEL_FACTINJECT=100
 }
+
 
 qnx: target.path = /tmp/$${TARGET}/bin
 else: unix:!android: target.path = /opt/$${TARGET}/bin

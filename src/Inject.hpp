@@ -27,7 +27,6 @@
 #define LOGLEVEL_RB 3
 #endif
 
-
 struct Tracee;
 
 struct PTraceException : public std::exception
