@@ -17,7 +17,7 @@ MainWindow::MainWindow(QWidget *parent) :
   factorio(this),
   fState(ProgramStart),
   gState(ProgramStart),
-  gdbmiGiver(nullptr)
+  workq()
 {
   ui->setupUi(this);
 
@@ -27,7 +27,7 @@ MainWindow::MainWindow(QWidget *parent) :
 
 #pragma GCC diagnostic ignored "-Wunused-parameter"
   QObject::connect(&factorio, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
-                   [=](int exitCode, QProcess::ExitStatus exitStatus){
+                   [&](int exitCode, QProcess::ExitStatus exitStatus){
     ui->actionFactorioMode->setEnabled(true);
     ui->actionFactorioMode->setText("Run Factorio");
   });
@@ -50,7 +50,7 @@ MainWindow::~MainWindow()
   }
   delete ui;
 
-  if (gdbmiGiver) delete gdbmiGiver;
+  //if (gdbmiGiver) delete gdbmiGiver;
 }
 
 
@@ -122,9 +122,17 @@ void MainWindow::kill_gdb()
   gdb.waitForFinished(-1);
 }
 
-void MainWindow::integrate()
+void MainWindow::attach_to_factorio()
 {
-  Logger::info("Integrating factorio with debugger logic.");
+  effluent_t worker([&] (influent_t& src) {
+    ui->gdbmiDock->write("-target-attach %d", factorio.pid());
+    src();
+    TerminalEvent* ptEvent = src.get();
+    Logger::debug("[gdbmi-ack]: %s", ptEvent->qs.toLatin1().data());
+  });
+  TerminalEvent initial;
+  worker(&initial);
+  workq.push_worker(std::move(worker));
 }
 
 void MainWindow::attach_gdbmi()
@@ -146,26 +154,16 @@ void MainWindow::attach_gdbmi()
 
   Logger::print("Creating gdb/mi terminal on %s", name);
 
-  if (gdbmiGiver) delete gdbmiGiver;
-  using namespace std::placeholders;
-  gdbmiGiver = new coro_t::push_type( [&](coro_t::pull_type& taker) {
-
-      auto tmev = taker.get();
-      char cmd[1024];
-      snprintf(cmd, 1023, "new-ui mi2 %s", name);
-      QString qscmd = QString::fromLatin1(cmd);
-      ui->gdbDock->writeInput(qscmd);
-
-      if (!taker()) {
-        return;
-      }
-      tmev = taker.get();
-      Logger::print("Received from gdbmi: %s", tmev.qs.toLatin1().data());
+  effluent_t worker([&] (influent_t& src){
+    Logger::debug("Entered coroutine...");
+    ui->gdbDock->write("new-ui mi2 %s", name);
+    src();
+    TerminalEvent* ptEvent = src.get();
+    Logger::debug("[gdbmi-ack]: %s", ptEvent->qs.toLatin1().data());
   });
-
-  Logger::debug("gdbmiGiver about to run for first time...");
-  TerminalEvent tev;
-  (*gdbmiGiver)(tev);
+  TerminalEvent initial;
+  worker(&initial);
+  workq.push_worker(std::move(worker));
 
 }
 
@@ -178,20 +176,20 @@ void MainWindow::parse_gdb_lines(const QString &qs)
   }
   if (!combinedInitialized && (gState == Initialized && fState == Initialized)) {
     // integration edge
-    integrate();
+    attach_to_factorio();
   }
 }
 
 void MainWindow::parse_factorio_lines(const QString &qs)
 {
   bool combinedInitialized = (gState == Initialized) && (fState == Initialized);
-  if (fState != Initialized && qs.contains("Factorio initialised.")) {
+  if (fState != Initialized && qs.contains("Factorio initialised")) {
     fState = Initialized;
     Logger::info("Factorio initialization is complete.");
   }
   if (!combinedInitialized && (gState == Initialized && fState == Initialized)) {
     // integration edge
-    integrate();
+    attach_to_factorio();
   }
 
 }
@@ -199,9 +197,8 @@ void MainWindow::parse_factorio_lines(const QString &qs)
 void MainWindow::parse_gdbmi_lines(const QString &qs)
 {
   TerminalEvent tev(qs);
-  if (*gdbmiGiver)  {
-    (*gdbmiGiver)(tev);
-  }
+  //char* pc = qs.toLatin1().data();
+  workq.push_input(&tev);
 }
 
 void MainWindow::showEvent(QShowEvent *event)

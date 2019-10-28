@@ -25,7 +25,7 @@ INCLUDEPATH += ../src
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
 
 #CONFIG +=
-QMAKE_CXXFLAGS += -std=c++2a
+QMAKE_CXXFLAGS += -std=c++17
 
 
 SOURCES += \
@@ -44,12 +44,14 @@ SOURCES += \
 HEADERS += \
         ../src/Inject.hpp \
         ../src/lua_imports.hpp \
+        ../src/util/co_work_queue.hpp \
         ../src/util/errno_exception.hpp \
         ../src/util/exceptions.hpp \
         ../src/util/log.hpp \
         ../src/util/safe_deque.hpp \
         ../src/util/text_response.hpp \
         FactorioProcess.h \
+        fdb_logger.hpp \
         gui/QOptionsDock.h \
         gui/QTerminalDock.h \
         gui/QTerminalIOEvent.h \
@@ -64,8 +66,7 @@ FORMS += \
 
 # Default rules for deployment.
 debug {
-  QMAKE_CXXFLAGS_DEBUG += -I../../fdb -I../../src -include fdb_logger_debug.hpp
-  HEADERS += fdb_logger_debug.hpp
+  QMAKE_CXXFLAGS += -I ../../../src  -include ../../fdb_logger.hpp
   DEFINES += DEBUG
   DEFINES += LOGLEVEL_FACTINJECT=100
 }

@@ -306,19 +306,18 @@ void QTerminalDock::windowSizeChanged (unsigned short rows, unsigned short cols)
   windowSizeChanged(ws);
 }
 
-
-void QTerminalDock::writeInput (QString& qs)
+void QTerminalDock::write (const char *fmt, ...)
 {
-  if (!_ptfd)  return;
-  if (!qs.endsWith(('\n'))) qs += '\n';
-  inputQueue.safe_emplace_front(qs);
-  struct epoll_event eev;
-  memset(&eev, 0, sizeof(struct epoll_event));
-  eev.events = EPOLLIN | EPOLLOUT;
-  eev.data.fd = _ptfd;
-  int r = epoll_ctl(_epoll, EPOLL_CTL_MOD, _ptfd, &eev);
-  assert_re(r != -1, "Error while modifying epoll for terminal output: %s", strerror(errno));
+  char* bufr = reinterpret_cast<char*>(alloca( 4096 ));
+  va_list vargs;
+  va_start(vargs,fmt);
+  vsnprintf(bufr, 4096, fmt, vargs);
+  va_end(vargs);
+  QString qs = QString::fromLatin1(bufr);
+  writeInput(std::move(qs));
 }
+
+
 
 void QTerminalDock::returnPressed()
 {

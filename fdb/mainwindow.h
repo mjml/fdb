@@ -8,8 +8,7 @@
 #include <QMainWindow>
 #include <QPlainTextEdit>
 #include <map>
-#include <boost/coroutine2/coroutine.hpp>
-
+#include <util/co_work_queue.hpp>
 
 namespace Ui {
 class MainWindow;
@@ -39,26 +38,6 @@ public:
   };
 
 
-  typedef boost::coroutines2::coroutine<TerminalEvent> coro_t;
-
-  struct IOGiver : public IOCoro, public coro_t::push_type
-  {
-    template<typename Fn>
-    IOGiver(MainWindow* w, Fn &&fn) : IOCoro(w), coro_t::push_type(fn) {}
-
-    IOGiver(const IOGiver& other) = delete;
-    ~IOGiver() = default;
-  };
-
-  struct IOTaker : public IOCoro, public coro_t::pull_type
-  {
-    template<typename Fn>
-    IOTaker(MainWindow* w, Fn &&fn) : IOCoro(w), coro_t::pull_type(fn) {}
-
-    IOTaker(const IOTaker& other) = delete;
-    ~IOTaker() = default;
-  };
-
 public:
   explicit MainWindow(QWidget *parent = nullptr);
   virtual ~MainWindow() override;
@@ -71,14 +50,20 @@ private:
 
   GDBProcess gdb;
   FactorioProcess factorio;
+
   enum ProgState {
     ProgramStart,
     NotRunning,
     Initializing,
     Initialized
   } fState, gState;
-  coro_t::push_type* gdbmiGiver;
 
+  //coro_t::push_type* gdbmiGiver;
+  typedef co_work_queue<TerminalEvent*> CoworkQueue;
+  typedef CoworkQueue::coro_t::pull_type influent_t;
+  typedef CoworkQueue::coro_t::push_type effluent_t;
+
+  CoworkQueue workq;
 
 public slots:
   void start_factorio();
@@ -89,7 +74,7 @@ public slots:
 
   void kill_gdb();
 
-  void integrate ();
+  void attach_to_factorio ();
 
   void attach_gdbmi();
 

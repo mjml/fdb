@@ -1,6 +1,7 @@
 ﻿#ifndef QTERMINALDOCK_H
 #define QTERMINALDOCK_H
 
+#include <sys/epoll.h>
 #include <QProcess>
 #include <QLineEdit>
 #include <QCheckBox>
@@ -9,6 +10,7 @@
 
 #include "gui/QOptionsDock.h"
 #include "util/safe_deque.hpp"
+#include "util/exceptions.hpp"
 
 class QTerminalDock : public QOptionsDock
 {
@@ -73,6 +75,21 @@ public:
    */
   virtual bool event (QEvent* e) override;
 
+  /**
+   * @brief Writes a string of text to this process' stdin.
+   * @param qs A QString of text. A carriage return will be appended if needed.
+   */
+  template<typename T>
+  void writeInput (T qs);
+
+  /**
+   * @brief Helper writer for formatted input to the terminal.
+   * @param fmt
+   */
+  void write (const char* fmt, ...);
+
+
+
 signals:
   void output (const QString& qs);
   void input (const QString& qs);
@@ -90,12 +107,6 @@ public slots:
    */
   void windowSizeChanged (const struct winsize& newSize);
   void windowSizeChanged (unsigned short rows, unsigned short cols);
-
-  /**
-   * @brief Writes a string of text to this process' stdin.
-   * @param qs A QString of text. A carriage return will be appended if needed.
-   */
-  void writeInput (QString& qs);
 
   /**
    * @brief This is the handler for the input line edit control
@@ -119,5 +130,21 @@ private:
   QThread*          _iothread;
 
 };
+
+template<typename T>
+void QTerminalDock::writeInput (T qs)
+{
+  if (!_ptfd)  return;
+  if (!qs.endsWith(('\n'))) qs += '\n';
+  inputQueue.safe_emplace_front(qs);
+  struct epoll_event eev;
+  memset(&eev, 0, sizeof(struct epoll_event));
+  eev.events = EPOLLIN | EPOLLOUT;
+  eev.data.fd = _ptfd;
+  int r = epoll_ctl(_epoll, EPOLL_CTL_MOD, _ptfd, &eev);
+  assert_re(r != -1, "Error while modifying epoll for terminal output: %s", strerror(errno));
+}
+
+
 
 #endif // QTERMINALDOCK_H
