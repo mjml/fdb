@@ -4,6 +4,8 @@
 #include "util/exceptions.hpp"
 #include "gui/QTerminalDock.h"
 #include "util/GDBProcess.h"
+#include <QStringLiteral>
+#include <QRegExp>
 #include <QTimer>
 #include <QtConcurrent/QtConcurrent>
 #include <QThreadPool>
@@ -126,11 +128,27 @@ void MainWindow::attach_to_factorio()
 {
   effluent_t worker([&] (influent_t& src) {
     ui->gdbmiDock->write("-target-attach %d", factorio.pid());
-    src();
-    TerminalEvent* ptEvent = src.get();
-    Logger::debug("[gdbmi-ack]: %s", ptEvent->qs.toLatin1().data());
+    do { src(); } while (!src.get()->text.contains("^done"));
+    ui->gdbmiDock->write("100-data-evaluate-expression \"(long)dlopen(\\\x22/home/joya/localdev/factinject/fdbstub/builds/debug/libfdbstub.so\\\x22, 2)\"");
+    do { src(); } while (!src.get()-> text.startsWith("100^done"));
+    src.get()->text.toLatin1().data();
+    QRegExp retvalue_regex(QLatin1String("value=\"(\\d+)\""));
+    int pos = retvalue_regex.indexIn(src.get()->text, 8);
+    if (pos != -1) {
+      // address of stub at:
+      QString cap = retvalue_regex.cap(1);
+      bool ok = false;
+      unsigned long long stub_address = cap.toULongLong(&ok,10);
+      Logger::print("Injected stub at 0x%llx", stub_address);
+    } else {
+      // Couldn't find address of stub
+      Logger::print("Couldn't inject stub executable.");
+    }
+
+    ui->gdbmiDock->write("-exec-continue --all");
+    do { src(); } while (!src.get()->text.startsWith("^running"));
   });
-  TerminalEvent initial;
+  QTerminalIOEvent initial;
   worker(&initial);
   workq.push_worker(std::move(worker));
 }
@@ -155,22 +173,21 @@ void MainWindow::attach_gdbmi()
   Logger::print("Creating gdb/mi terminal on %s", name);
 
   effluent_t worker([&] (influent_t& src){
-    Logger::debug("Entered coroutine...");
     ui->gdbDock->write("new-ui mi2 %s", name);
     src();
-    TerminalEvent* ptEvent = src.get();
-    Logger::debug("[gdbmi-ack]: %s", ptEvent->qs.toLatin1().data());
+    QTerminalIOEvent* ptEvent = src.get();
+    //Logger::debug("[gdbmi-ack]: %s", ptEvent->text.toLatin1().data());
   });
-  TerminalEvent initial;
+  QTerminalIOEvent initial;
   worker(&initial);
   workq.push_worker(std::move(worker));
 
 }
 
-void MainWindow::parse_gdb_lines(const QString &qs)
+void MainWindow::parse_gdb_lines(QTerminalIOEvent& event)
 {
   bool combinedInitialized = (gState == Initialized) && (fState == Initialized);
-  if (gState != Initialized && qs.contains("(gdb)")) {
+  if (gState != Initialized && event.text.contains("(gdb)")) {
     gState = Initialized;
     attach_gdbmi();
   }
@@ -180,10 +197,10 @@ void MainWindow::parse_gdb_lines(const QString &qs)
   }
 }
 
-void MainWindow::parse_factorio_lines(const QString &qs)
+void MainWindow::parse_factorio_lines(QTerminalIOEvent& event)
 {
   bool combinedInitialized = (gState == Initialized) && (fState == Initialized);
-  if (fState != Initialized && qs.contains("Factorio initialised")) {
+  if (fState != Initialized && event.text.contains("Factorio initialised")) {
     fState = Initialized;
     Logger::info("Factorio initialization is complete.");
   }
@@ -194,11 +211,10 @@ void MainWindow::parse_factorio_lines(const QString &qs)
 
 }
 
-void MainWindow::parse_gdbmi_lines(const QString &qs)
+void MainWindow::parse_gdbmi_lines(QTerminalIOEvent& event)
 {
-  TerminalEvent tev(qs);
   //char* pc = qs.toLatin1().data();
-  workq.push_input(&tev);
+  workq.push_input(&event);
 }
 
 void MainWindow::showEvent(QShowEvent *event)

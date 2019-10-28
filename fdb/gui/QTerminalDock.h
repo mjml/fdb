@@ -9,6 +9,7 @@
 #include <QPlainTextEdit>
 
 #include "gui/QOptionsDock.h"
+#include "gui/QTerminalIOEvent.h"
 #include "util/safe_deque.hpp"
 #include "util/exceptions.hpp"
 
@@ -91,16 +92,13 @@ public:
 
 
 signals:
-  void output (const QString& qs);
+  void output (QTerminalIOEvent& ioEvent);
   void input (const QString& qs);
 
 public slots:
   // titlebar controls
   void logSizeLabelClicked (bool checked);
   void logSizeEdited ();
-
-  // input edit control
-  void onTerminalOutput (const QString& qs);
 
   /**
    * @brief Call this when the GUI has resized the terminal window (usually the output window)
@@ -113,7 +111,8 @@ public slots:
    */
   void returnPressed ();
 
-
+protected:
+  void onTerminalEvent (QTerminalIOEvent& qs);
 
 private:
   IoView            ioview;

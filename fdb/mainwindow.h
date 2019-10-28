@@ -15,6 +15,7 @@ class MainWindow;
 class SettingsDialog;
 }
 
+/*
 struct TerminalEvent
 {
   enum Type {
@@ -23,9 +24,11 @@ struct TerminalEvent
   } type;
 
   QString qs;
-  TerminalEvent() : type(Initial), qs() {}
-  TerminalEvent(const QString& s) : type(Output), qs(s) {}
+  bool display;
+  TerminalEvent() : type(Initial), qs(), display(false) {}
+  TerminalEvent(const QString& s) : type(Output), qs(s), display(true) {}
 };
+*/
 
 class MainWindow : public QMainWindow
 {
@@ -59,7 +62,7 @@ private:
   } fState, gState;
 
   //coro_t::push_type* gdbmiGiver;
-  typedef co_work_queue<TerminalEvent*> CoworkQueue;
+  typedef co_work_queue<QTerminalIOEvent*> CoworkQueue;
   typedef CoworkQueue::coro_t::pull_type influent_t;
   typedef CoworkQueue::coro_t::push_type effluent_t;
 
@@ -78,11 +81,11 @@ public slots:
 
   void attach_gdbmi();
 
-  void parse_gdb_lines(const QString& qs);
+  void parse_gdb_lines(QTerminalIOEvent& event);
 
-  void parse_factorio_lines(const QString& qs);
+  void parse_factorio_lines(QTerminalIOEvent& event);
 
-  void parse_gdbmi_lines(const QString& qs);
+  void parse_gdbmi_lines(QTerminalIOEvent& event);
 
 protected:
   virtual void showEvent(QShowEvent* event) override;

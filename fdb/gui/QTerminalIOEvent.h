@@ -6,10 +6,13 @@
 
 struct QTerminalIOEvent : public QEvent
 {
-public:
-  QTerminalIOEvent(QString&& qs);
+  QTerminalIOEvent ();
+  QTerminalIOEvent (QString&& qs);
+  ~QTerminalIOEvent () = default;
 
-  QString text;
+  QString  text;
+  bool     display;
+  char padding[7];
 };
 
 #endif // QTERMINALIOEVENT_H

@@ -173,7 +173,7 @@ bool QTerminalDock::event(QEvent *e)
 {
   if (e->type() == ioEventType) {
     auto qte = static_cast<QTerminalIOEvent*>(e);
-    onTerminalOutput(qte->text);
+    onTerminalEvent(*qte);
   }
   return QWidget::event(e);
 }
@@ -363,11 +363,12 @@ void QTerminalDock::logSizeEdited ()
 
 }
 
-void QTerminalDock::onTerminalOutput (const QString &qs)
+void QTerminalDock::onTerminalEvent (QTerminalIOEvent& event)
 {
   // this signal will be emitted by the new QTerminalDock instead
-  output(qs);
-  outEdit->insertPlainText(qs);
+  output(event);
+
+  outEdit->insertPlainText(event.text);
   if (freezeChk->checkState() == Qt::CheckState::Unchecked) {
     outEdit->ensureCursorVisible();
   }
