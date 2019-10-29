@@ -5,4 +5,4 @@ factstub.so
 exp?
 *.pro.user*
 builds/
-ext/
+ext/*
