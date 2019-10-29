@@ -1,4 +1,5 @@
 #include <iostream>
+#include <lua.h>
 
 using namespace std;
 

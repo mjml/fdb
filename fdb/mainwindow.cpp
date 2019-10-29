@@ -131,7 +131,6 @@ void MainWindow::attach_to_factorio()
     do { src(); } while (!src.get()->text.contains("^done"));
     ui->gdbmiDock->write("100-data-evaluate-expression \"(long)dlopen(\\\x22/home/joya/localdev/factinject/fdbstub/builds/debug/libfdbstub.so\\\x22, 2)\"");
     do { src(); } while (!src.get()-> text.startsWith("100^done"));
-    src.get()->text.toLatin1().data();
     QRegExp retvalue_regex(QLatin1String("value=\"(\\d+)\""));
     int pos = retvalue_regex.indexIn(src.get()->text, 8);
     if (pos != -1) {
@@ -148,11 +147,45 @@ void MainWindow::attach_to_factorio()
     ui->gdbmiDock->write("-file-symbol-file /home/joya/localdev/factinject/fdbstub/builds/debug/libfdbstub.so.1.0.0");
     do { src(); } while (!src.get()->text.contains("^done"));
 
+    ui->gdbmiDock->write("-file-symbol-file /home/joya/games/factorio/bin/x64/factorio");
+    do { src(); } while (!src.get()->text.contains("^done"));
+
     ui->gdbmiDock->write("101-data-evaluate-expression stub_init()");
     do { src(); } while (!src.get()->text.startsWith("101^done"));
 
+    ui->gdbmiDock->write("-break-insert --function lua_newstate");
+    do { src(); } while (!src.get()->text.startsWith("^done"));
+
     ui->gdbmiDock->write("-exec-continue --all");
     do { src(); } while (!src.get()->text.startsWith("^running"));
+
+    do { src(); } while (!src.get()->text.contains("breakpoint-hit"));
+    ui->gdbmiDock->write("-data-evaluate-expression $rdi");
+
+    do { src(); } while (!src.get()->text.contains("^done,value="));
+    QRegExp luaState_regexp(QLatin1String("value=\"(\\d+)\""));
+    pos = luaState_regexp.indexIn(src.get()->text);
+    if (pos != -1) {
+      QString cap = luaState_regexp.cap(1);
+      bool ok = false;
+      unsigned long long pState = cap.toULongLong();
+      Logger::print("lua_State found at 0x%llx", pState);
+    } else {
+      Logger::warning("Couldn't obtain lua_State pointer.");
+    }
+
+    // So here we've got it, but we can't execute on it right away --
+    // We need to pass it to some stub_register function later so that it can register its C functions.
+    // Also, we may want to hook more since they are clearly doing some work with mods early on in initialization.
+
+    // TODO: tidy up this section and review the I/O chain. The work queue could use further enhancements!
+
+    ui->gdbmiDock->write("-break-delete 1");
+    do { src(); } while (!src.get()->text.startsWith("^done"));
+
+    ui->gdbmiDock->write("-exec-continue --all");
+    do { src(); } while (!src.get()->text.startsWith("^running"));
+
   });
   QTerminalIOEvent initial;
   worker(&initial);
