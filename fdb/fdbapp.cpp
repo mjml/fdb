@@ -1,4 +1,4 @@
-#include "mainwindow.h"
+#include "fdbapp.h"
 #include "ui_mainwindow.h"
 #include "ui_settings.h"
 #include "util/exceptions.hpp"
@@ -12,7 +12,7 @@
 
 
 
-MainWindow::MainWindow(QWidget *parent) :
+FDBApp::FDBApp(QWidget *parent) :
   QMainWindow(parent),
   ui(new Ui::MainWindow),
   gdb(this),
@@ -30,7 +30,7 @@ MainWindow::MainWindow(QWidget *parent) :
 }
 
 
-MainWindow::~MainWindow()
+FDBApp::~FDBApp()
 {
   if (factorio.state() == QProcess::Running) {
     factorio.terminate();
@@ -48,7 +48,7 @@ MainWindow::~MainWindow()
 }
 
 
-void MainWindow::start_factorio()
+void FDBApp::start_factorio()
 {
   if (factorio.state() == QProcess::Running) {
     Logger::warning("Can't start factorio, it is already running!");
@@ -70,14 +70,14 @@ void MainWindow::start_factorio()
   fState = Initializing;
 }
 
-void MainWindow::kill_factorio()
+void FDBApp::kill_factorio()
 {
   factorio.close();
   ui->factorioDock->stopIOThread();
   ui->factorioDock->destroyPty();
 }
 
-void MainWindow::restart_gdb()
+void FDBApp::restart_gdb()
 {
   if (gdb.state() == QProcess::Starting) {
     Logger::warning("Refusing to start gdb because process is just starting...");
@@ -87,7 +87,7 @@ void MainWindow::restart_gdb()
   if (gdb.state() == QProcess::Running) {
     Logger::warning("Restarting running gdb...");
     kill_gdb();
-    QTimer::singleShot(2500, this, &MainWindow::restart_gdb);
+    QTimer::singleShot(2500, this, &FDBApp::restart_gdb);
     return;
   }
 
@@ -107,7 +107,7 @@ void MainWindow::restart_gdb()
 
 }
 
-void MainWindow::kill_gdb()
+void FDBApp::kill_gdb()
 {
   Logger::info("Terminating gdb process...");
   ui->gdbDock->stopIOThread();
@@ -116,7 +116,7 @@ void MainWindow::kill_gdb()
   gdb.waitForFinished(-1);
 }
 
-void MainWindow::attach_to_factorio()
+void FDBApp::attach_to_factorio()
 {
   effluent_t worker([&] (influent_t& src) {
     ui->gdbmiDock->write("-target-attach %d", factorio.pid());
@@ -184,7 +184,7 @@ void MainWindow::attach_to_factorio()
   workq.push_worker(std::move(worker));
 }
 
-void MainWindow::attach_gdbmi()
+void FDBApp::attach_gdbmi()
 {
   if (gdb.state() != QProcess::Running) {
     Logger::warning("gdb isn't running, can't attach gdb/mi terminal");
@@ -215,7 +215,7 @@ void MainWindow::attach_gdbmi()
 
 }
 
-void MainWindow::parse_gdb_lines(QTerminalIOEvent& event)
+void FDBApp::parse_gdb_lines(QTerminalIOEvent& event)
 {
   bool combinedInitialized = (gState == Initialized) && (fState == Initialized);
   if (gState != Initialized && event.text.contains("(gdb)")) {
@@ -228,7 +228,7 @@ void MainWindow::parse_gdb_lines(QTerminalIOEvent& event)
   }
 }
 
-void MainWindow::parse_factorio_lines(QTerminalIOEvent& event)
+void FDBApp::parse_factorio_lines(QTerminalIOEvent& event)
 {
   bool combinedInitialized = (gState == Initialized) && (fState == Initialized);
   if (fState != Initialized && event.text.contains("Factorio")) {
@@ -242,25 +242,25 @@ void MainWindow::parse_factorio_lines(QTerminalIOEvent& event)
 
 }
 
-void MainWindow::parse_gdbmi_lines(QTerminalIOEvent& event)
+void FDBApp::parse_gdbmi_lines(QTerminalIOEvent& event)
 {
   //char* pc = qs.toLatin1().data();
   workq.push_input(&event);
 }
 
-void MainWindow::on_factorio_finished(int exitCode, QProcess::ExitStatus exitStatus)
+void FDBApp::on_factorio_finished(int exitCode, QProcess::ExitStatus exitStatus)
 {
   fState = NotRunning;
   ui->actionFactorioMode->setEnabled(true);
   ui->actionFactorioMode->setText("Run Factorio");
 }
 
-void MainWindow::on_gdb_finished(int exitCode, QProcess::ExitStatus exitStatus)
+void FDBApp::on_gdb_finished(int exitCode, QProcess::ExitStatus exitStatus)
 {
   gState = NotRunning;
 }
 
-void MainWindow::showEvent(QShowEvent *event)
+void FDBApp::showEvent(QShowEvent *event)
 {
   QMainWindow::showEvent(event);
   if (gState == ProgramStart) {

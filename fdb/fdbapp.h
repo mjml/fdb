@@ -30,20 +30,20 @@ struct TerminalEvent
 };
 */
 
-class MainWindow : public QMainWindow
+class FDBApp : public QMainWindow
 {
   Q_OBJECT
 
 public:
   struct IOCoro {
-    MainWindow* win;
-    IOCoro(MainWindow* w) : win(w) {}
+    FDBApp* win;
+    IOCoro(FDBApp* w) : win(w) {}
   };
 
 
 public:
-  explicit MainWindow(QWidget *parent = nullptr);
-  virtual ~MainWindow() override;
+  explicit FDBApp(QWidget *parent = nullptr);
+  virtual ~FDBApp() override;
 
   void initialize_actions ();
 

@@ -33,12 +33,12 @@ SOURCES += \
         ../src/lua_imports.cpp \
         ../src/util/log.cpp \
         FactorioProcess.cpp \
+        fdbapp.cpp \
+        fdbapp_actions.cpp \
         gui/QOptionsDock.cpp \
         gui/QTerminalDock.cpp \
         gui/QTerminalIOEvent.cpp \
         main.cpp \
-        mainwindow.cpp \
-        mainwindow_actions.cpp \
         util/GDBProcess.cpp
 
 HEADERS += \
@@ -52,10 +52,10 @@ HEADERS += \
         ../src/util/text_response.hpp \
         FactorioProcess.h \
         fdb_logger.hpp \
+        fdbapp.h \
         gui/QOptionsDock.h \
         gui/QTerminalDock.h \
         gui/QTerminalIOEvent.h \
-        mainwindow.h \
         util/GDBProcess.h
 
 LIBS += -lutil -lboost_coroutine -lboost_context

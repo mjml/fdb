@@ -4,7 +4,7 @@
 #include "gui/QTerminalDock.h"
 #include "util/log.hpp"
 
-#include "mainwindow.h"
+#include "fdbapp.h"
 
 // The Stdio Sink: (this is now provided by log.hpp by default)
 const char stdioname[] = "stdio";
@@ -28,7 +28,7 @@ int main(int argc, char *argv[])
 
   QApplication a(argc, argv);
   QTerminalDock::registerEventTypes();
-  MainWindow w;
+  FDBApp w;
   w.show();
 
   auto r = a.exec();
