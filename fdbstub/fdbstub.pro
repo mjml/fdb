@@ -4,4 +4,7 @@ CONFIG -= app_bundle
 CONFIG -= qt
 
 SOURCES += \
-        main.cpp
+    fdbstub.cpp
+
+HEADERS += \
+    fdbstub.h

@@ -138,12 +138,18 @@ void MainWindow::attach_to_factorio()
       // address of stub at:
       QString cap = retvalue_regex.cap(1);
       bool ok = false;
-      unsigned long long stub_address = cap.toULongLong(&ok,10);
-      Logger::print("Injected stub at 0x%llx", stub_address);
+      unsigned long long dlhandle = cap.toULongLong(&ok,10);
+      Logger::print("Injected stub at 0x%llx", dlhandle);
     } else {
       // Couldn't find address of stub
       Logger::print("Couldn't inject stub executable.");
     }
+
+    ui->gdbmiDock->write("-file-symbol-file /home/joya/localdev/factinject/fdbstub/builds/debug/libfdbstub.so.1.0.0");
+    do { src(); } while (!src.get()->text.contains("^done"));
+
+    ui->gdbmiDock->write("101-data-evaluate-expression stub_init()");
+    do { src(); } while (!src.get()->text.startsWith("101^done"));
 
     ui->gdbmiDock->write("-exec-continue --all");
     do { src(); } while (!src.get()->text.startsWith("^running"));
@@ -200,7 +206,7 @@ void MainWindow::parse_gdb_lines(QTerminalIOEvent& event)
 void MainWindow::parse_factorio_lines(QTerminalIOEvent& event)
 {
   bool combinedInitialized = (gState == Initialized) && (fState == Initialized);
-  if (fState != Initialized && event.text.contains("Factorio initialised")) {
+  if (fState != Initialized && event.text.contains("Factorio")) {
     fState = Initialized;
     Logger::info("Factorio initialization is complete.");
   }
