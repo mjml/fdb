@@ -21,5 +21,9 @@ void MainWindow::initialize_actions()
   connect(ui->factorioDock, &QTerminalDock::output, this, &MainWindow::parse_factorio_lines);
 
   connect(ui->gdbmiDock, &QTerminalDock::output, this, &MainWindow::parse_gdbmi_lines);
+
+  connect(&factorio, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this, &MainWindow::on_factorio_finished);
+
+  connect(&gdb, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this, &MainWindow::on_gdb_finished);
 }
 

@@ -27,14 +27,6 @@ MainWindow::MainWindow(QWidget *parent) :
 
   initialize_actions();
 
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-  QObject::connect(&factorio, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
-                   [&](int exitCode, QProcess::ExitStatus exitStatus){
-    ui->actionFactorioMode->setEnabled(true);
-    ui->actionFactorioMode->setText("Run Factorio");
-  });
-#pragma GCC diagnostic warning "-Wunused-parameter"
-
 }
 
 
@@ -168,7 +160,7 @@ void MainWindow::attach_to_factorio()
     if (pos != -1) {
       QString cap = luaState_regexp.cap(1);
       bool ok = false;
-      unsigned long long pState = cap.toULongLong();
+      unsigned long long pState = cap.toULongLong(&ok, 10);
       Logger::print("lua_State found at 0x%llx", pState);
     } else {
       Logger::warning("Couldn't obtain lua_State pointer.");
@@ -256,12 +248,23 @@ void MainWindow::parse_gdbmi_lines(QTerminalIOEvent& event)
   workq.push_input(&event);
 }
 
+void MainWindow::on_factorio_finished(int exitCode, QProcess::ExitStatus exitStatus)
+{
+  fState = NotRunning;
+  ui->actionFactorioMode->setEnabled(true);
+  ui->actionFactorioMode->setText("Run Factorio");
+}
+
+void MainWindow::on_gdb_finished(int exitCode, QProcess::ExitStatus exitStatus)
+{
+  gState = NotRunning;
+}
+
 void MainWindow::showEvent(QShowEvent *event)
 {
   QMainWindow::showEvent(event);
   if (gState == ProgramStart) {
     restart_gdb();
-    gState = Initializing;
   }
 }
 

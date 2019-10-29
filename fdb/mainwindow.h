@@ -87,6 +87,11 @@ public slots:
 
   void parse_gdbmi_lines(QTerminalIOEvent& event);
 
+protected slots:
+  void on_factorio_finished(int exitCode, QProcess::ExitStatus exitStatus);
+  void on_gdb_finished(int exitCode, QProcess::ExitStatus exitStatus);
+
+
 protected:
   virtual void showEvent(QShowEvent* event) override;
 
