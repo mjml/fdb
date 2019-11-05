@@ -30,7 +30,6 @@ QMAKE_CXXFLAGS += -std=c++17
 
 SOURCES += \
         ../src/Inject.cpp \
-        ../src/lua_imports.cpp \
         ../src/util/log.cpp \
         FactorioProcess.cpp \
         fdbapp.cpp \
@@ -43,6 +42,7 @@ SOURCES += \
 
 HEADERS += \
         ../src/Inject.hpp \
+        ../src/ipc/mqueue.hpp \
         ../src/lua_imports.hpp \
         ../src/util/co_work_queue.hpp \
         ../src/util/errno_exception.hpp \

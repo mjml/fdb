@@ -249,7 +249,7 @@ void QTerminalDock::performIO()
         n = ::read(eev.data.fd, rdbuf, 4095);
         rdbuf[n] = 0;
         QString text = QString::fromLatin1(rdbuf,static_cast<int>(n));
-        auto ev = new QTerminalIOEvent(std::forward<QString>(text));
+        auto ev = new QTerminalIOEvent(std::move(text));
         QCoreApplication::postEvent(this, ev);
       } else if (r && (eev.events & EPOLLOUT)) {
         inputQueue.fast_lock();
@@ -284,8 +284,7 @@ void QTerminalDock::performIO()
       char msg[1024];
       snprintf(msg, 1023, "Critical exception in IOThread: %s", e.what());
       Logger::critical(msg);
-      QString text(msg);
-      auto ev = new QTerminalIOEvent(std::forward<QString>(text));
+      auto ev = new QTerminalIOEvent(QLatin1String(msg));
       QCoreApplication::postEvent(this,ev);
     }
   }
@@ -367,10 +366,11 @@ void QTerminalDock::onTerminalEvent (QTerminalIOEvent& event)
 {
   // this signal will be emitted by the new QTerminalDock instead
   output(event);
-
-  outEdit->insertPlainText(event.text);
-  if (freezeChk->checkState() == Qt::CheckState::Unchecked) {
-    outEdit->ensureCursorVisible();
+  if (event.display) {
+    outEdit->insertPlainText(event.text);
+    if (freezeChk->checkState() == Qt::CheckState::Unchecked) {
+      outEdit->ensureCursorVisible();
+    }
   }
 }
 

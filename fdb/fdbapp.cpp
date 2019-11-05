@@ -4,13 +4,14 @@
 #include "util/exceptions.hpp"
 #include "gui/QTerminalDock.h"
 #include "util/GDBProcess.h"
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 #include <QStringLiteral>
 #include <QRegExp>
 #include <QTimer>
 #include <QtConcurrent/QtConcurrent>
 #include <QThreadPool>
-
-
 
 FDBApp::FDBApp(QWidget *parent) :
   QMainWindow(parent),
@@ -19,19 +20,35 @@ FDBApp::FDBApp(QWidget *parent) :
   factorio(this),
   fState(ProgramStart),
   gState(ProgramStart),
+  fdbsock(0),
   workq()
 {
   ui->setupUi(this);
 
-  //ui->gdbmiDock->hide();
+  read_settings();
 
   initialize_actions();
+
+  fdbsock = ::socket(AF_UNIX, SOCK_STREAM, 0);
+
+  const char* fdbsock_name = "fdbsocket";
+  sockaddr_un sa;
+  memset(&sa, 0, sizeof(sockaddr_un));
+  sa.sun_family = AF_UNIX;
+  strcpy(sa.sun_path+1, fdbsock_name);
+
+  int r = ::bind(fdbsock,
+                 reinterpret_cast<const struct sockaddr*>(&sa),
+                 static_cast<socklen_t>(sizeof(sa_family_t) + strlen(fdbsock_name) + 1));
+  assert_re(r == 0, "Couldn't find the fdbsocket UNIX socket. strerror(errno) = \"%s\"", strerror(errno));
 
 }
 
 
 FDBApp::~FDBApp()
 {
+  write_settings();
+
   if (factorio.state() == QProcess::Running) {
     factorio.terminate();
     factorio.waitForFinished();
@@ -45,8 +62,34 @@ FDBApp::~FDBApp()
   delete ui;
 
   //if (gdbmiGiver) delete gdbmiGiver;
+  ::close(fdbsock);
 }
 
+void FDBApp::read_settings ()
+{
+  QSettings settings("Hermitude", "fdb");
+
+  settings.beginGroup("MainWindow");
+  auto size = settings.value("size");
+  if (!size.isNull())  {
+    resize(size.toSize());
+  }
+  auto pos = settings.value("pos");
+  if (!pos.isNull()) {
+    move(pos.toPoint());
+  }
+  settings.endGroup();
+}
+
+void FDBApp::write_settings ()
+{
+  QSettings settings("Hermitude", "fdb");
+
+  settings.beginGroup("MainWindow");
+  settings.setValue("size", size());
+  settings.setValue("pos", pos());
+  settings.endGroup();
+}
 
 void FDBApp::start_factorio()
 {
@@ -157,10 +200,11 @@ void FDBApp::attach_to_factorio()
     do { src(); } while (!src.get()->text.contains("^done,value="));
     QRegExp luaState_regexp(QLatin1String("value=\"(\\d+)\""));
     pos = luaState_regexp.indexIn(src.get()->text);
+    unsigned long long pState = 0;
     if (pos != -1) {
       QString cap = luaState_regexp.cap(1);
       bool ok = false;
-      unsigned long long pState = cap.toULongLong(&ok, 10);
+      pState = cap.toULongLong(&ok, 10);
       Logger::print("lua_State found at 0x%llx", pState);
     } else {
       Logger::warning("Couldn't obtain lua_State pointer.");
@@ -174,6 +218,10 @@ void FDBApp::attach_to_factorio()
 
     ui->gdbmiDock->write("-break-delete 1");
     do { src(); } while (!src.get()->text.startsWith("^done"));
+
+    // maybe set another breakpoint here for very much later, or perhaps upon returning to some function higher up the call stack
+
+    //ui->gdbmiDock->write("102-data-evaluate-expression register_lua_state(%d)", pState);
 
     ui->gdbmiDock->write("-exec-continue --all");
     do { src(); } while (!src.get()->text.startsWith("^running"));
@@ -207,7 +255,6 @@ void FDBApp::attach_gdbmi()
     ui->gdbDock->write("new-ui mi2 %s", name);
     src();
     QTerminalIOEvent* ptEvent = src.get();
-    //Logger::debug("[gdbmi-ack]: %s", ptEvent->text.toLatin1().data());
   });
   QTerminalIOEvent initial;
   worker(&initial);

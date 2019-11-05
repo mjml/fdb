@@ -1,7 +1,6 @@
 #define __LUA_IMPORTS_CPP
 #include "lua_imports.hpp"
 #include "Inject.hpp"
-#include "factstub_logger.hpp"
 
 #define SAFE_BIND(s) \
 	try { \

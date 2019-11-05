@@ -4,31 +4,21 @@
 #include "util/log.hpp"
 #include "gui/QTerminalDock.h"
 #include "util/GDBProcess.h"
+#include "ipc/mqueue.hpp"
 #include "FactorioProcess.h"
 #include <QMainWindow>
 #include <QPlainTextEdit>
+#include <QSettings>
 #include <map>
 #include <util/co_work_queue.hpp>
+
 
 namespace Ui {
 class MainWindow;
 class SettingsDialog;
 }
 
-/*
-struct TerminalEvent
-{
-  enum Type {
-    Initial,
-    Output
-  } type;
-
-  QString qs;
-  bool display;
-  TerminalEvent() : type(Initial), qs(), display(false) {}
-  TerminalEvent(const QString& s) : type(Output), qs(s), display(true) {}
-};
-*/
+typedef boost::interprocess::message_queue mqueue;
 
 class FDBApp : public QMainWindow
 {
@@ -47,9 +37,12 @@ public:
 
   void initialize_actions ();
 
+  void read_settings ();
+  void write_settings ();
+
 private:
   Ui::MainWindow*      ui;
-  Ui::SettingsDialog*  settings;
+  Ui::SettingsDialog*  settingsUi;
 
   GDBProcess gdb;
   FactorioProcess factorio;
@@ -60,6 +53,8 @@ private:
     Initializing,
     Initialized
   } fState, gState;
+
+  int fdbsock;
 
   //coro_t::push_type* gdbmiGiver;
   typedef co_work_queue<QTerminalIOEvent*> CoworkQueue;
