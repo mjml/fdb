@@ -6,3 +6,4 @@ exp?
 *.pro.user*
 builds/
 ext/*
+fdb.log
