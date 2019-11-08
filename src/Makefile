@@ -8,7 +8,7 @@ LDFLAGS=-g -lrt
 default: factinject factstub.so
 
 clean:
-	$(RM) -rf *.o *.obj util/*.o util/*.obj factinject test? exp?
+	$(RM) -rf *.o *.obj util/*.o util/*.obj factinject factstub.so test? exp?
 
 debiter: debiter.obj
 	$(CXX) $(LDFLAGS) $^ -o $@
