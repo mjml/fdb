@@ -1,0 +1,26 @@
+How IO passes from an external program (Factorio or GDB) into fdb.
+
+* Output from e.g. gdb arrives on one of two ptys, and is delivered via	epoll on an io thread
+* The iothread creates a QTerminalIOEvent and posts it to the gui thread
+* The QTerminalDock widgets capture these events and produce an	output signal
+* Currently, the FDBApp class delegates this signal to a co_work_queue to
+  ensure that only one ongoing task can act on this information at a time.
+* The co_work_queue will have a	push coroutine at its head. It resumes this coroutine with the QTerminalIOEvent.
+* This coroutine acts on the QTerminalIOEvent, often parsing the line of text it contains.
+
+
+Switching this over to an EpollDispatcher
+
+* Output from e.g. fdb arrives on a pty and is delivered via epoll to an io thread.
+* That io thread is owned and run by an EPollDispatcher object, which holds QIOEventFactory objects which create
+    QIOEvent objects and posts them to the gui thread.
+* QTerminalDock and FDBApp both handle these events using Qt event handling.
+
+* For GDB events, FDBApp is listening to output events in QTerminalDock and runs its own handler when this
+  dock widget receives output.
+* FDBApp maintains a co_work_queue whose coroutines handle gdb events sequentially.
+* These coroutines handle work sequences like attaching GDB to the Factorio process,
+  obtaining the lua_State pointer, etc.
+
+* For fdbsocket events, FDBApp catches these output events and builds them into its own Factorio game state representation.
+
