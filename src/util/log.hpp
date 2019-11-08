@@ -1,4 +1,5 @@
-#pragma once
+#ifndef _LOG_HPP
+#define _LOG_HPP
 
 #include <string>
 #include <sstream>
@@ -12,6 +13,7 @@
 #include <stdexcept>
 #include "errno_exception.hpp"
 
+#pragma GCC diagnostic ignored "-Wunused-but-set-parameter"
 
 enum LogLevel {
 								NONE = 0,
@@ -118,7 +120,6 @@ inline void Log<Level, Name, Sinks...>::fmtprint (int lvl, const char* fmt, Ps..
 	write(entry,chrs);
 }
 
-#pragma GCC diagnostic ignored "-Wunused-but-set-parameter"
 template<int Level, const char* Name, typename...Sinks>
 template<int Lvl, typename...Ps>
 inline void Log<Level,Name,Sinks...>::log_at_level (const char* fmt, Ps...ps)
@@ -129,3 +130,4 @@ inline void Log<Level,Name,Sinks...>::log_at_level (const char* fmt, Ps...ps)
 
 }
 
+#endif

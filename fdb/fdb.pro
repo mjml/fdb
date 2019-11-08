@@ -25,11 +25,12 @@ INCLUDEPATH += ../src
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
 
 #CONFIG +=
-QMAKE_CXXFLAGS += -std=c++17
+QMAKE_CXXFLAGS += -std=c++17 -Wno-format-security
 
 
 SOURCES += \
         ../src/Inject.cpp \
+        ../src/io/EPollDispatcher.cpp \
         ../src/util/log.cpp \
         FactorioProcess.cpp \
         fdbapp.cpp \
@@ -42,6 +43,7 @@ SOURCES += \
 
 HEADERS += \
         ../src/Inject.hpp \
+        ../src/io/EPollDispatcher.h \
         ../src/ipc/mqueue.hpp \
         ../src/lua_imports.hpp \
         ../src/util/co_work_queue.hpp \
@@ -66,11 +68,10 @@ FORMS += \
 
 # Default rules for deployment.
 debug {
-  QMAKE_CXXFLAGS += -I ../../../src  -include ../../fdb_logger.hpp
+  QMAKE_CXXFLAGS += -I../../../src  -include ../../fdb_logger.hpp
   DEFINES += DEBUG
   DEFINES += LOGLEVEL_FACTINJECT=100
 }
-
 
 qnx: target.path = /tmp/$${TARGET}/bin
 else: unix:!android: target.path = /opt/$${TARGET}/bin

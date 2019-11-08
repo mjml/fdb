@@ -12,10 +12,10 @@
 using namespace lua_imports;
 
 const char stdioname[] = "stdio";
-template class Log<100,stdioname,FILE>;
+template struct Log<100,stdioname,FILE>;
 
 const char applogname[] = "fdbstb";
-template class Log<LOGLEVEL_FDBSTUB,applogname,StdioSink>;
+template struct Log<LOGLEVEL_FDBSTUB,applogname,StdioSink>;
 
 using namespace std;
 
@@ -32,6 +32,8 @@ int fdbsock = 0;
  */
 int stub_init ()
 {
+  StdioSink::initialize_with_handle(stdout);
+  Logger::initialize();
   Logger::print("fdbstub stub_init()");
 
   // open unix socket to fdb

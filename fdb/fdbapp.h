@@ -25,13 +25,6 @@ class FDBApp : public QMainWindow
   Q_OBJECT
 
 public:
-  struct IOCoro {
-    FDBApp* win;
-    IOCoro(FDBApp* w) : win(w) {}
-  };
-
-
-public:
   explicit FDBApp(QWidget *parent = nullptr);
   virtual ~FDBApp() override;
 
@@ -56,7 +49,6 @@ private:
 
   int fdbsock;
 
-  //coro_t::push_type* gdbmiGiver;
   typedef co_work_queue<QTerminalIOEvent*> CoworkQueue;
   typedef CoworkQueue::coro_t::pull_type influent_t;
   typedef CoworkQueue::coro_t::push_type effluent_t;
@@ -92,6 +84,6 @@ protected:
 
 };
 
-
+extern int gdbpid;
 
 #endif // MAINWINDOW_H

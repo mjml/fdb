@@ -10,6 +10,7 @@
 
 #include "gui/QOptionsDock.h"
 #include "gui/QTerminalIOEvent.h"
+#include "io/EPollDispatcher.h"
 #include "util/safe_deque.hpp"
 #include "util/exceptions.hpp"
 
@@ -24,10 +25,33 @@ public:
     COMBINED
   };
 
+  /**
+   * @brief The output event posted from the IO thread.
+   */
+  static QEvent::Type ioEventType;
+
+private:
+  IoView            ioview;
+  QPushButton*      lszbtn;
+  QLineEdit*        lszedit;
+  QCheckBox*        freezeChk;
+  QLineEdit*        inEdit;
+  QPlainTextEdit*   outEdit;
+
+  safe_deque<const QString>   inputQueue;
+
+  int               _ptfd;
+  QThread*          _iothread;
+
+  static constexpr int outbuf_max_siz = 65536;
+  int               outbuf_idx;
+  int               outbuf_siz;
+  char              outbuf[outbuf_max_siz];
+
 public:
   QTerminalDock();
   QTerminalDock(QWidget* parent);
-  ~QTerminalDock() override;
+  virtual ~QTerminalDock();
 
   const QString ptyname();
 
@@ -35,16 +59,6 @@ public:
 
   void setIoView (IoView _view);
   IoView ioView () { return ioview; }
-
-  /**
-   * @brief Called by the GUI thread to start IO polling in a separate thread
-   */
-  void startIOThread ();
-
-  /**
-   * @brief Called by the GUI thread to stop IO polling, usually before shutdown.
-   */
-  void stopIOThread();
 
   /**
    * @brief Called to set up the EPoll in the GUI thread before control is handed over to the IO thread.
@@ -55,16 +69,6 @@ public:
    * @brief The pty is gone when the slave closes it, so need to have a way to cleanly shut down the master.
    */
   void destroyPty();
-
-  /**
-   * @brief Called in a separate thread to read from the output fd and post events back to this object in the GUI thread.
-   */
-  void performIO ();
-
-  /**
-   * @brief The output event posted from the IO thread.
-   */
-  static QEvent::Type ioEventType;
 
   /**
    * @brief Sets up the output event posted from the IO thread.
@@ -89,8 +93,6 @@ public:
    */
   void write (const char* fmt, ...);
 
-
-
 signals:
   void output (QTerminalIOEvent& ioEvent);
   void input (const QString& qs);
@@ -114,19 +116,9 @@ public slots:
 protected:
   void onTerminalEvent (QTerminalIOEvent& qs);
 
-private:
-  IoView            ioview;
-  QPushButton*      lszbtn;
-  QLineEdit*        lszedit;
-  QCheckBox*        freezeChk;
-  QLineEdit*        inEdit;
-  QPlainTextEdit*   outEdit;
+  ListenerDetails::handler_ret_t onEPollIn (const struct epoll_event& eev);
 
-  safe_deque<const QString>   inputQueue;
-
-  int               _ptfd;
-  int               _epoll;
-  QThread*          _iothread;
+  ListenerDetails::handler_ret_t onEPollOut (const struct epoll_event& eev);
 
 };
 
@@ -135,13 +127,10 @@ void QTerminalDock::writeInput (T qs)
 {
   if (!_ptfd)  return;
   if (!qs.endsWith(('\n'))) qs += '\n';
+
+  auto appioDispatch = EPollDispatcher::def();
   inputQueue.safe_emplace_front(qs);
-  struct epoll_event eev;
-  memset(&eev, 0, sizeof(struct epoll_event));
-  eev.events = EPOLLIN | EPOLLOUT;
-  eev.data.fd = _ptfd;
-  int r = epoll_ctl(_epoll, EPOLL_CTL_MOD, _ptfd, &eev);
-  assert_re(r != -1, "Error while modifying epoll for terminal output: %s", strerror(errno));
+  appioDispatch->modify(_ptfd, EPOLLOUT, 0);
 }
 
 

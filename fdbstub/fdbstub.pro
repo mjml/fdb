@@ -5,6 +5,7 @@ CONFIG -= qt
 
 SOURCES += \
     ../src/Inject.cpp \
+    ../src/io/EPollDispatcher.cpp \
     ../src/lua_imports.cpp \
     ../src/util/log.cpp \
     fdbstub.cpp
@@ -35,6 +36,7 @@ HEADERS += \
     ../ext/lua-5.2.1/src/lvm.h \
     ../ext/lua-5.2.1/src/lzio.h \
     ../src/fdbstub_logger.hpp \
+    ../src/io/EPollDispatcher.hpp \
     ../src/lua_imports.hpp \
     ../src/util/co_work_queue.hpp \
     ../src/util/errno_exception.hpp \
@@ -43,7 +45,8 @@ HEADERS += \
     ../src/util/microsleep.h \
     ../src/util/safe_deque.hpp \
     ../src/util/text_response.hpp \
-    fdbstub.h
+    fdbstub.h \
+    fdbstub_logger.hpp
 
 LIBS += -lpthread
 
@@ -55,7 +58,6 @@ debug {
   DEFINES += DEBUG
   DEFINES += LOGLEVEL_FACTINJECT=100
 }
-
 
 unix:!macx: LIBS += $$PWD/../ext/lua-5.2.1/src/liblua.a
 unix: QMAKE_LFLAGS += -rdynamic

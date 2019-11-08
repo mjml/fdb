@@ -287,7 +287,7 @@ protected:
 };
 
 extern const char waitlogname[];
-extern template class Log<LOGLEVEL_WAIT,waitlogname,Logger>;
+extern template struct Log<LOGLEVEL_WAIT,waitlogname,Logger>;
 typedef Log<LOGLEVEL_WAIT,waitlogname,Logger> WaitLog;
 
 template <int Sec, int USec, bool ThrowOnFailure>

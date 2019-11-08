@@ -13,6 +13,8 @@
 #include <QtConcurrent/QtConcurrent>
 #include <QThreadPool>
 
+int gdbpid = 0;
+
 FDBApp::FDBApp(QWidget *parent) :
   QMainWindow(parent),
   ui(new Ui::MainWindow),
@@ -57,13 +59,14 @@ FDBApp::~FDBApp()
   if (gdb.state() == QProcess::Running) {
     gdb.terminate();
     gdb.waitForFinished();
+    gdbpid = 0;
     gState = NotRunning;
   }
   delete ui;
 
-  //if (gdbmiGiver) delete gdbmiGiver;
   ::close(fdbsock);
 }
+
 
 void FDBApp::read_settings ()
 {
@@ -81,6 +84,7 @@ void FDBApp::read_settings ()
   settings.endGroup();
 }
 
+
 void FDBApp::write_settings ()
 {
   QSettings settings("Hermitude", "fdb");
@@ -90,6 +94,7 @@ void FDBApp::write_settings ()
   settings.setValue("pos", pos());
   settings.endGroup();
 }
+
 
 void FDBApp::start_factorio()
 {
@@ -101,7 +106,10 @@ void FDBApp::start_factorio()
   ui->actionFactorioMode->setEnabled(false);
   ui->actionFactorioMode->setText("Factorio is running...");
   ui->factorioDock->createPty();
-  ui->factorioDock->startIOThread();
+
+  // TODO: move into createPty
+  //ui->factorioDock->startIOThread();
+
   Logger::print("Starting Factorio with pseudoterminal on %s", ui->factorioDock->ptyname().toLatin1().data());
 
   factorio.setStandardOutputFile(ui->factorioDock->ptyname().toLatin1().data());
@@ -113,12 +121,15 @@ void FDBApp::start_factorio()
   fState = Initializing;
 }
 
+
 void FDBApp::kill_factorio()
 {
   factorio.close();
-  ui->factorioDock->stopIOThread();
+  // TODO: move into destroyPty
+  //ui->factorioDock->stopIOThread();
   ui->factorioDock->destroyPty();
 }
+
 
 void FDBApp::restart_gdb()
 {
@@ -135,7 +146,6 @@ void FDBApp::restart_gdb()
   }
 
   ui->gdbDock->createPty();
-  ui->gdbDock->startIOThread();
 
   Logger::print("Starting gdb with pseudoterminal on %s", ui->gdbDock->ptyname().toLatin1().data());
 
@@ -150,10 +160,12 @@ void FDBApp::restart_gdb()
 
 }
 
+
 void FDBApp::kill_gdb()
 {
   Logger::info("Terminating gdb process...");
-  ui->gdbDock->stopIOThread();
+  // TODO: this functionality will be moved into destroyPty()
+  //ui->gdbDock->stopIOThread();
   ui->gdbDock->destroyPty();
   gdb.kill();
   gdb.waitForFinished(-1);
@@ -244,7 +256,8 @@ void FDBApp::attach_gdbmi()
   }
 
   ui->gdbmiDock->createPty();
-  ui->gdbmiDock->startIOThread();
+  // TODO: move into createPty()
+  //ui->gdbmiDock->startIOThread();
 
   auto ba = ui->gdbmiDock->ptyname().toLatin1();
   char* name = ba.data();
@@ -264,6 +277,10 @@ void FDBApp::attach_gdbmi()
 
 void FDBApp::parse_gdb_lines(QTerminalIOEvent& event)
 {
+  if (!gdbpid) {
+    // HACK: it's a bit hacky to grab/store this here, but before this we aren't assured of a gdb process pid
+    gdbpid = static_cast<int>(gdb.pid());
+  }
   bool combinedInitialized = (gState == Initialized) && (fState == Initialized);
   if (gState != Initialized && event.text.contains("(gdb)")) {
     gState = Initialized;

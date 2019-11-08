@@ -948,7 +948,7 @@ auto Tracee::Inject_dlsym (const char* szsymbol) -> pointer
 	
 	// amend the blob with the sum of the segment address and symbol address of the target function
 	*(reinterpret_cast<uint64_t*>(buffer+funcaddr_offset)) = seg->start + symbol->offset;
-	Logger::info("dlsym (%s) is located at 0x%lx", symbol->name, seg->start + symbol->offset);
+	Logger::info("dlsym (%s) is located at 0x%lx", symbol->name.data(), seg->start + symbol->offset);
 	
 	// save remote registers and existing rip text
 	SaveRegisters(&ur);

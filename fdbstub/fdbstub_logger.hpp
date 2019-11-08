@@ -8,11 +8,9 @@
 #endif
 
 extern const char stdioname[];
-extern template class Log<100,stdioname,FILE>;
+extern template struct Log<100,stdioname,FILE>;
 typedef Log<100,stdioname,FILE> StdioSink;
 
 extern const char applogname[];
-extern template class Log<LOGLEVEL_FDBSTUB,applogname,StdioSink>;
+extern template struct Log<LOGLEVEL_FDBSTUB,applogname,StdioSink>;
 typedef Log<LOGLEVEL_FDBSTUB,applogname,StdioSink> Logger;
-
-
