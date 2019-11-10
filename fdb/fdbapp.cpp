@@ -22,27 +22,17 @@ FDBApp::FDBApp(QWidget *parent) :
   factorio(this),
   fState(ProgramStart),
   gState(ProgramStart),
-  fdbsock(0),
+  fdbsocket(nullptr),
   workq()
 {
+  initialize_fdbsocket();
+
   ui->setupUi(this);
 
   read_settings();
 
   initialize_actions();
 
-  fdbsock = ::socket(AF_UNIX, SOCK_STREAM, 0);
-
-  const char* fdbsock_name = "fdbsocket";
-  sockaddr_un sa;
-  memset(&sa, 0, sizeof(sockaddr_un));
-  sa.sun_family = AF_UNIX;
-  strcpy(sa.sun_path+1, fdbsock_name);
-
-  int r = ::bind(fdbsock,
-                 reinterpret_cast<const struct sockaddr*>(&sa),
-                 static_cast<socklen_t>(sizeof(sa_family_t) + strlen(fdbsock_name) + 1));
-  assert_re(r == 0, "Couldn't find the fdbsocket UNIX socket. strerror(errno) = \"%s\"", strerror(errno));
 
 }
 
@@ -64,7 +54,49 @@ FDBApp::~FDBApp()
   }
   delete ui;
 
-  ::close(fdbsock);
+}
+
+void FDBApp::initialize_fdbsocket()
+{
+  int fd = ::socket(AF_UNIX, SOCK_STREAM, 0);
+  assert_re(fd > -1, "Error while trying to create unix socket: %s", strerror(errno));
+
+  fdbsocket = std::make_shared<autoclosing_fd>(fd);
+  Logger::fuss("Initialized fdbsocket fdbsocket->fd=%d  fd=%d", fdbsocket->fd, fd);
+
+  setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<void*>(true), sizeof(void*));
+
+  const char* fdbsock_name = "fdbsocket";
+  sockaddr_un sa;
+  memset(&sa, 0, sizeof(sockaddr_un));
+  sa.sun_family = AF_UNIX;
+  strcpy(sa.sun_path+1, fdbsock_name);
+  int retries = 1;
+  while (retries <= 3) {
+    int r = ::bind(fd,
+                   reinterpret_cast<const struct sockaddr*>(&sa),
+                   static_cast<socklen_t>(sizeof(sa_family_t) + strlen(fdbsock_name) + 1));
+    if (r != 0) {
+
+      Logger::warning("Couldn't bind the fdbsocket UNIX socket. [\"%s\"] %s", strerror(errno), retries < 3 ? "Trying to flush socket fd cache..." : "");
+      r = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<void*>(true), sizeof(void*));
+    } else {
+      break;
+    }
+    retries++;
+  }
+  assert_re(retries < 3, "Couldn't bind the fdbsocket UNIX after 3 attempts!");
+
+  auto appioDispatch = EPollDispatcher::def();
+  appioDispatch->start_singleclient_listener(fdbsocket,
+                                             std::bind(&FDBApp::on_fdbsocket_event,
+                                                       this, std::placeholders::_1));
+
+}
+
+void FDBApp::finalize_fdbsocket()
+{
+  fdbsocket.reset();
 }
 
 
@@ -312,16 +344,26 @@ void FDBApp::parse_gdbmi_lines(QTerminalIOEvent& event)
   workq.push_input(&event);
 }
 
-void FDBApp::on_factorio_finished(int exitCode, QProcess::ExitStatus exitStatus)
+void FDBApp::on_factorio_finished (int exitCode, QProcess::ExitStatus exitStatus)
 {
   fState = NotRunning;
   ui->actionFactorioMode->setEnabled(true);
   ui->actionFactorioMode->setText("Run Factorio");
 }
 
-void FDBApp::on_gdb_finished(int exitCode, QProcess::ExitStatus exitStatus)
+void FDBApp::on_gdb_finished (int exitCode, QProcess::ExitStatus exitStatus)
 {
   gState = NotRunning;
+}
+
+EPollListener::ret_t FDBApp::on_fdbsocket_event (const epoll_event &eev)
+{
+
+}
+
+EPollListener::ret_t FDBApp::on_fdbstubsocket_event (const epoll_event &eev)
+{
+
 }
 
 void FDBApp::showEvent(QShowEvent *event)

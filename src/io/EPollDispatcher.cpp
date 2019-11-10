@@ -1,13 +1,74 @@
 #include <sys/ioctl.h>
 #include <sys/epoll.h>
+#include <sys/socket.h>
+#include <fcntl.h>
+#include <mutex>
 #include "util/safe_deque.hpp"
 #include "util/exceptions.hpp"
 #include "EPollDispatcher.h"
 
 std::shared_ptr<EPollDispatcher> EPollDispatcher::appioDispatch;
 
+
+EPollListener::ret_t SingleClientAcceptor::acceptFunction (const struct epoll_event& eev) {
+  int newfd = 0;
+  if (eev.events & EPOLLIN) {
+    struct sockaddr sa;
+    socklen_t len = 0;
+    Logger::debug("SingleClientAcceptor accepting incoming connection. fd_expected: %d  fd_received: %d", pfd->fd, eev.data.fd);
+
+    EPollDispatcher::def()->mut.lock();
+
+    newfd = ::accept(*pfd, &sa, &len);
+    if (newfd == -1) {
+      Logger::warning("Error while accepting fdbsocket connection. [\"%s\"]", strerror(errno));
+      return ret_t{false,0,0};
+    }
+
+    int flags = fcntl(newfd, F_GETFL, 0);
+    int r = fcntl(newfd, F_SETFL, flags | O_NONBLOCK);
+    assert_re(r != -1, "Couldn't set socket options for new client socket %d [%s]", newfd, strerror(errno) );
+
+    int oldfd = *pfd;
+
+    Logger::debug("Accepted client connection on newfd=%d, pivoting...", newfd);
+    *pfd = newfd;
+    EPollDispatcher::def()->start_listen(pfd, EPOLLIN, deferredHandler);
+    EPollDispatcher::def()->stop_listen(oldfd); // will call `delete this', so don't touch the object after this!
+
+    ::close(oldfd);
+
+    EPollDispatcher::def()->mut.unlock();
+
+  } else if (eev.events & EPOLLHUP) {
+    // could happen during an incomplete handshake, for example.
+    Logger::warning("SingleClientAcceptor's socket received HUP");
+  }
+
+  // Must return 0,0 here since the EPOLLIN handler will be calling
+  //   stop_listen() which removes this fd from all maps.
+  return ret_t { true, 0, 0 };
+}
+
+
+EPollListener::~EPollListener ()
+{
+  /*
+  if (pfd.use_count() == 1) {
+	  ::close(*pfd);
+	}
+	pfd.reset();
+  */
+
+}
+
+
 EPollDispatcher::~EPollDispatcher ()
 {
+  std::scoped_lock lock(mut);
+  for (auto it = listeners.begin(); it != listeners.end(); it++) {
+    delete it->second;
+  }
   listeners.clear();
 }
 
@@ -41,13 +102,16 @@ void EPollDispatcher::run ()
     eev.data.u64 = 0;
     eev.events = 0;
     r = epoll_wait(_epoll, &eev, 1, 400);
+
+    mut.lock();
+
     int fd = eev.data.fd;
     if (r > 0) {
       auto bkt = listeners.bucket(fd);
       for (auto it = listeners.begin(bkt); it != listeners.end(bkt); it++) {
-        const ListenerDetails& ld = it->second;
-        if (eev.events & ld.events) {
-          auto p = ld.handler(eev);
+        const EPollListener* listener = it->second;
+        if (eev.events & listener->events) {
+          auto p = listener->handler(eev);
           if (p.add|| p.rem) {
             modify(fd, p.add, p.rem);
             if (p.handled) break; // if the listener signals to end the event, avert further listening
@@ -55,6 +119,9 @@ void EPollDispatcher::run ()
         }
       }
     }
+
+    mut.unlock();
+
     if (r == -1) {
       if (error_handler) {
         error_handler(errno);
@@ -66,41 +133,45 @@ void EPollDispatcher::run ()
 
 void EPollDispatcher::stop_listen (int fd)
 {
+  std::lock_guard lock(mut);
   int r = 0;
-  if (eventMap.find(fd) != eventMap.end()) {
+  if (auto it = eventMap.find(fd); it != eventMap.end()) {
     r = epoll_ctl(_epoll, EPOLL_CTL_DEL, fd, nullptr);
     if (r == -1) {
       Logger::warning("Couldn't delete events from an epoll (fd=%02d: %s)", fd, strerror(errno));
     }
     eventMap.erase(fd);
   }
-  if (auto lit = listeners.find(fd); lit != listeners.end()) {
-    listeners.erase(lit);
+  auto lit = listeners.bucket(fd);
+  for (auto it = listeners.begin(lit); it != listeners.end(lit); ) {
+    delete it->second;
   }
-
+  listeners.erase(fd);
 }
 
 
-void EPollDispatcher::add_listener (ListenerDetails&& ld)
+void EPollDispatcher::add_listener (EPollListener* listener)
 {
-  bool is_new = eventMap.find(ld.fd) == eventMap.end();
-  listeners.emplace(ld.fd, std::move(ld));
+  std::lock_guard lock(mut);
+  bool is_new = eventMap.find(*listener->pfd) == eventMap.end();
+  listeners.emplace(listener->pfd->fd, listener);
   if (is_new) {
     struct epoll_event mod_events;
-    mod_events.events = ld.events & ~EPOLLOUT; // when adding a new EPOLLOUT listener, don't enable the event straightaway
+    mod_events.events = listener->events & ~EPOLLOUT; // when adding a new EPOLLOUT listener, don't enable the event straightaway
     mod_events.data.u64 = 0UL;
-    mod_events.data.fd = ld.fd;
-    eventMap.insert({ld.fd, ld.events});
-    int r = epoll_ctl(_epoll, EPOLL_CTL_ADD, ld.fd, &mod_events);
-    assert_re(r != -1, "epoll_ctl with EPOLL_CTL_ADD failed. strerror(errno) = \"%s\"");
+    mod_events.data.fd = listener->pfd->fd;
+    eventMap.insert({listener->pfd->fd, listener->events});
+    int r = epoll_ctl(_epoll, EPOLL_CTL_ADD, listener->pfd->fd, &mod_events);
+    assert_re(r != -1, "epoll_ctl with EPOLL_CTL_ADD failed. [\"%s\"]", strerror(errno));
   } else {
-    modify(ld.fd, ld.events, 0);
+    modify(listener->pfd->fd, listener->events, 0);
   }
 }
 
 
 void EPollDispatcher::modify (int fd, unsigned int events_to_add, unsigned int events_to_remove)
 {
+  std::lock_guard lock(mut);
   eventMap[fd] |= events_to_add;
   eventMap[fd] &= ~events_to_remove;
   struct epoll_event mod_events;
@@ -133,7 +204,7 @@ void EPollDispatcher::finalize ()
 std::shared_ptr<EPollDispatcher> EPollDispatcher::def()
 {
   if (!static_cast<bool>(appioDispatch)) {
-	throw std::logic_error("Default EPollDispatch is null");
+    throw std::logic_error("Default EPollDispatch is null");
   }
   return appioDispatch;
 }

@@ -60,6 +60,7 @@ int main (int argc, char *argv[])
 }
 
 
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 void sigquit_handler (int sig, siginfo_t *info, void *ucontext)
 {
   fprintf(stderr, "Handling signal %d\n", sig);

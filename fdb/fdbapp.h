@@ -28,6 +28,9 @@ public:
   explicit FDBApp(QWidget *parent = nullptr);
   virtual ~FDBApp() override;
 
+  void initialize_fdbsocket ();
+  void finalize_fdbsocket ();
+
   void initialize_actions ();
 
   void read_settings ();
@@ -47,7 +50,7 @@ private:
     Initialized
   } fState, gState;
 
-  int fdbsock;
+  EPollListener::pfd_t fdbsocket;
 
   typedef co_work_queue<QTerminalIOEvent*> CoworkQueue;
   typedef CoworkQueue::coro_t::pull_type influent_t;
@@ -74,10 +77,11 @@ public slots:
 
   void parse_gdbmi_lines(QTerminalIOEvent& event);
 
-protected slots:
+protected:
   void on_factorio_finished(int exitCode, QProcess::ExitStatus exitStatus);
   void on_gdb_finished(int exitCode, QProcess::ExitStatus exitStatus);
-
+  EPollListener::ret_t on_fdbsocket_event (const epoll_event& eev);
+  EPollListener::ret_t on_fdbstubsocket_event (const epoll_event& eev);
 
 protected:
   virtual void showEvent(QShowEvent* event) override;

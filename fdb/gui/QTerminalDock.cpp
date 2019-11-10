@@ -25,7 +25,7 @@ QTerminalDock::QTerminalDock()
     lszbtn(nullptr), lszedit(nullptr),
     freezeChk(nullptr),
     inEdit(nullptr), outEdit(nullptr),
-    _ptfd(0),
+    _ptfd(),
     _iothread(nullptr),
     outbuf_idx(0),
     outbuf_siz(0)
@@ -116,7 +116,7 @@ QTerminalDock::~QTerminalDock ()
 
 const QString QTerminalDock::ptyname()
 {
-   return QString(::ptsname(_ptfd));
+   return QString(::ptsname(*_ptfd));
 }
 
 
@@ -182,12 +182,13 @@ void QTerminalDock::createPty()
   struct winsize win = terminalDimensions();
 
   // problematic, seems to randomize certain ty behaviours
-  _ptfd = getpt();
-  if (_ptfd == -1) errno_runtime_error;
+  int fd = getpt();
+  if (fd == -1) errno_runtime_error;
+  _ptfd = std::make_shared<autoclosing_fd>(fd);
 
-  int r = ioctl(_ptfd, TIOCSWINSZ, &win);
+  int r = ioctl(*_ptfd, TIOCSWINSZ, &win);
   assert_re(r==0, "Couldn't set window size on the pseudoterminal (%s)", strerror(errno));
-  unlockpt(_ptfd);
+  unlockpt(*_ptfd);
 
   auto appioDispatch = EPollDispatcher::def();
   using namespace std::placeholders;
@@ -201,12 +202,13 @@ void QTerminalDock::destroyPty()
 {
   // actually closing the fd is the sole responsibility of the slave
   auto appioDispatch = EPollDispatcher::def();
-  appioDispatch->stop_listen(_ptfd);
-  _ptfd = 0;
+  appioDispatch->stop_listen(*_ptfd);
+
+  _ptfd.reset();
 }
 
 
-ListenerDetails::handler_ret_t QTerminalDock::onEPollIn (const struct epoll_event& eev)
+EPollListener::ret_t QTerminalDock::onEPollIn (const struct epoll_event& eev)
 try {
   long n = 0; // bytes read
   const unsigned int buflen = 65536;
@@ -218,23 +220,23 @@ try {
   auto tioev = new QTerminalIOEvent(std::move(text));
   QCoreApplication::postEvent(this, tioev);
 
-  return ListenerDetails::handler_ret_t{ true, 0, 0 };
+  return EPollListener::ret_t{ true, 0, 0 };
 } catch (std::exception& e) {
   char msg[1024];
   snprintf(msg, 1023, "Critical exception in epoll thread during QTerminalDock i/o: %s", e.what());
   Logger::critical(msg);
   auto ev = new QTerminalIOEvent(QLatin1String(msg));
   QCoreApplication::postEvent(this,ev);
-  return ListenerDetails::handler_ret_t{true,0,0};
+  return EPollListener::ret_t{true,0,0};
 }
 
 
-ListenerDetails::handler_ret_t QTerminalDock::onEPollOut (const struct epoll_event& eev)
+EPollListener::ret_t QTerminalDock::onEPollOut (const struct epoll_event& eev)
 try {
-  ListenerDetails::handler_ret_t ret;
+  EPollListener::ret_t ret;
   inputQueue.fast_lock();
   if (outbuf_idx < outbuf_siz) {
-    ssize_t rw = ::write(_ptfd, outbuf + outbuf_idx, static_cast<unsigned long>(outbuf_siz - outbuf_idx));
+    ssize_t rw = ::write(*_ptfd, outbuf + outbuf_idx, static_cast<unsigned long>(outbuf_siz - outbuf_idx));
     assert_re(rw != -1, "Write error while performing continued write to a pseudoterminal descriptor: %s", strerror(errno));
     outbuf_idx += rw;
     ret.handled = true;
@@ -243,7 +245,7 @@ try {
     strncpy(outbuf, qs->toLatin1().data(), outbuf_max_siz);
     outbuf_idx = 0;
     outbuf_siz = qs->size();
-    ssize_t rw = ::write(_ptfd, outbuf + outbuf_idx, static_cast<unsigned long>(outbuf_siz - outbuf_idx));
+    ssize_t rw = ::write(*_ptfd, outbuf + outbuf_idx, static_cast<unsigned long>(outbuf_siz - outbuf_idx));
     assert_re(rw != -1, "Write error while writing to a pseudoterminal descriptor: %s", strerror(errno));
     outbuf_idx += rw;
     QString disp = *qs;
@@ -264,13 +266,13 @@ try {
   Logger::critical(msg);
   auto ev = new QTerminalIOEvent(QLatin1String(msg));
   QCoreApplication::postEvent(this,ev);
-  return ListenerDetails::handler_ret_t{true,0,0};
+  return EPollListener::ret_t{true,0,0};
 }
 
 
 void QTerminalDock::windowSizeChanged (const struct winsize& newSize)
 {
-  int r = ioctl(_ptfd, TIOCGWINSZ, &newSize);
+  int r = ioctl(*_ptfd, TIOCGWINSZ, &newSize);
   if (r) throw errno_runtime_error;
 }
 

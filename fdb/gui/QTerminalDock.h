@@ -40,8 +40,8 @@ private:
 
   safe_deque<const QString>   inputQueue;
 
-  int               _ptfd;
-  QThread*          _iothread;
+  EPollListener::pfd_t    _ptfd;
+  QThread*                _iothread;
 
   static constexpr int outbuf_max_siz = 65536;
   int               outbuf_idx;
@@ -116,9 +116,9 @@ public slots:
 protected:
   void onTerminalEvent (QTerminalIOEvent& qs);
 
-  ListenerDetails::handler_ret_t onEPollIn (const struct epoll_event& eev);
+  EPollListener::ret_t onEPollIn (const struct epoll_event& eev);
 
-  ListenerDetails::handler_ret_t onEPollOut (const struct epoll_event& eev);
+  EPollListener::ret_t onEPollOut (const struct epoll_event& eev);
 
 };
 
@@ -130,7 +130,7 @@ void QTerminalDock::writeInput (T qs)
 
   auto appioDispatch = EPollDispatcher::def();
   inputQueue.safe_emplace_front(qs);
-  appioDispatch->modify(_ptfd, EPOLLOUT, 0);
+  appioDispatch->modify(*_ptfd, EPOLLOUT, 0);
 }
 
 
