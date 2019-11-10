@@ -19,12 +19,22 @@ struct autoclosing_fd {
 	}
 	~autoclosing_fd() {
 		//Logger::debug2("autoclosing_fd destroyed with .fd=%d", fd);
-		::close(fd);
+		if (fd) {
+			::close(fd);
+		}
 	}
 	const autoclosing_fd& operator= (int fdesc) {
 		//Logger::debug2("assigning autoclosing_fd from int (not from autoclosing_fd&&)");
 		fd = fdesc;
+		return *this;
 	}
+	const autoclosing_fd& operator= (autoclosing_fd&& moved) {
+		fd = moved.fd;
+		moved.fd = 0;
+		return *this;
+	}
+	const autoclosing_fd& operator= (const autoclosing_fd& illegal) = delete;
+	const autoclosing_fd& operator= (autoclosing_fd& illegal) = delete;
 	operator int() { return fd; }
 };
 
