@@ -15,7 +15,7 @@ EPollListener::ret_t SingleClientAcceptor::acceptFunction (const struct epoll_ev
   if (eev.events & EPOLLIN) {
     struct sockaddr sa;
     socklen_t len = 0;
-    Logger::debug("SingleClientAcceptor accepting incoming connection. fd_expected: %d  fd_received: %d", pfd->fd, eev.data.fd);
+    Logger::debug("Accepting incoming connection on fdbsocket: fd: %d", eev.data.fd);
 
     EPollDispatcher::def()->mut.lock();
 
@@ -143,7 +143,7 @@ void EPollDispatcher::stop_listen (int fd)
     eventMap.erase(fd);
   }
   auto lit = listeners.bucket(fd);
-  for (auto it = listeners.begin(lit); it != listeners.end(lit); ) {
+  for (auto it = listeners.begin(lit); it != listeners.end(lit); it++) {
     delete it->second;
   }
   listeners.erase(fd);

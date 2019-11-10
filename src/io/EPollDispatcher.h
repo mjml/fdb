@@ -14,8 +14,17 @@
 
 struct autoclosing_fd {
 	int fd;
-	autoclosing_fd(int fdesc) : fd(fdesc) {}
-	~autoclosing_fd() { ::close(fd); }
+	autoclosing_fd(int fdesc) : fd(fdesc) {
+		//Logger::debug2("autoclosing_fd constructed with .fd=%d, fdesc=%d", fd, fdesc);
+	}
+	~autoclosing_fd() {
+		//Logger::debug2("autoclosing_fd destroyed with .fd=%d", fd);
+		::close(fd);
+	}
+	const autoclosing_fd& operator= (int fdesc) {
+		//Logger::debug2("assigning autoclosing_fd from int (not from autoclosing_fd&&)");
+		fd = fdesc;
+	}
 	operator int() { return fd; }
 };
 
