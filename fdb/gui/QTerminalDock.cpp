@@ -208,19 +208,50 @@ void QTerminalDock::destroyPty()
 }
 
 
-EPollListener::ret_t QTerminalDock::onEPollIn (const struct epoll_event& eev)
-try {
-  long n = 0; // bytes read
-  const unsigned int buflen = 65536;
-  char rdbuf[buflen];
+EPollListener::ret_t QTerminalDock::onEPollIn (const struct epoll_event& eev) try
+{
+  int r = static_cast<int>(::read(eev.data.fd, inbuf+inbuf_idx, static_cast<size_t>(inbuf_max_siz - inbuf_idx - 1)));
+  if (r == -1 && errno != EWOULDBLOCK && errno != EAGAIN) {
+    Logger::error("While trying to read data from a pty: %s", strerror(errno));
+    return EPollListener::ret_t{ true, 0, 0 };
+  }
+  if (errno == EWOULDBLOCK || errno == EAGAIN) {
+    // Basically, there are no bytes available. (epoll should prevent this). Just return.
+    return EPollListener::ret_t{ true, 0, 0 };
+  }
 
-  n = ::read(eev.data.fd, rdbuf, buflen-1);
-  rdbuf[n] = 0;
-  QString text = QString::fromLatin1(rdbuf,static_cast<int>(n));
-  auto tioev = new QTerminalIOEvent(std::move(text));
-  QCoreApplication::postEvent(this, tioev);
+  // Append the new null terminator
+  inbuf[inbuf_idx+r] = 0;
+
+  // scan for a new linefeed in the new portion of the buffer
+  int i=0;
+  for (i=inbuf_idx; i<r && inbuf[i] != '\n'; i++) { }
+  inbuf_idx += r;
+
+  do {
+    if (inbuf[i] == '\n' || inbuf_idx >= inbuf_max_siz) { // complete line or overflow
+      QByteArray ba(inbuf, i+1);
+      auto text = QString::fromLatin1(ba);
+      auto tioev = new QTerminalIOEvent(std::move(text));
+      strncpy(inbuf, inbuf+i+1, static_cast<size_t>(r-i-1));
+      inbuf_idx -= (i+1);
+      QCoreApplication::postEvent(this, tioev);
+
+      // if there is remaining text, scan for a new line from the start
+      if (inbuf_idx == 0) {
+        break;
+      } else {
+        for (i=0; i<inbuf_idx && inbuf[i] != '\n'; i++) { }
+      }
+
+    } else { // incomplete line
+      inbuf_idx += r; // set inbuf_idx to where the null terminator is, it will be the next byte written.
+      break;
+    }
+  } while(1);
 
   return EPollListener::ret_t{ true, 0, 0 };
+
 } catch (std::exception& e) {
   char msg[1024];
   snprintf(msg, 1023, "Critical exception in epoll thread during QTerminalDock i/o: %s", e.what());
@@ -237,6 +268,10 @@ try {
   inputQueue.fast_lock();
   if (outbuf_idx < outbuf_siz) {
     ssize_t rw = ::write(*_ptfd, outbuf + outbuf_idx, static_cast<unsigned long>(outbuf_siz - outbuf_idx));
+    if (rw == -1 && (errno == EWOULDBLOCK || errno == EAGAIN)) {
+      // could theoretically happen with a nonblocking socket i suppose, but epoll is supposed to prevent this
+      return EPollListener::ret_t{ true, 0, 0 };
+    }
     assert_re(rw != -1, "Write error while performing continued write to a pseudoterminal descriptor: %s", strerror(errno));
     outbuf_idx += rw;
     ret.handled = true;

@@ -43,12 +43,12 @@ FDBApp::~FDBApp()
 
   if (factorio.state() == QProcess::Running) {
     factorio.terminate();
-    factorio.waitForFinished();
+    factorio.waitForFinished(2000);
     fState = NotRunning;
   }
   if (gdb.state() == QProcess::Running) {
     gdb.terminate();
-    gdb.waitForFinished();
+    gdb.waitForFinished(2000);
     gdbpid = 0;
     gState = NotRunning;
   }
@@ -139,15 +139,11 @@ void FDBApp::start_factorio()
   ui->actionFactorioMode->setText("Factorio is running...");
   ui->factorioDock->createPty();
 
-  // TODO: move into createPty
-  //ui->factorioDock->startIOThread();
-
   Logger::print("Starting Factorio with pseudoterminal on %s", ui->factorioDock->ptyname().toLatin1().data());
 
   factorio.setStandardOutputFile(ui->factorioDock->ptyname().toLatin1().data());
   factorio.setStandardErrorFile(ui->factorioDock->ptyname().toLatin1().data());
 
-  // TODO: create a better way to manage engine versions / builds / deployments / etc.
   factorio.setWorkingDirectory("/home/joya");
   factorio.start("/home/joya/games/factorio/bin/x64/factorio");
   fState = Initializing;
@@ -157,8 +153,6 @@ void FDBApp::start_factorio()
 void FDBApp::kill_factorio()
 {
   factorio.close();
-  // TODO: move into destroyPty
-  //ui->factorioDock->stopIOThread();
   ui->factorioDock->destroyPty();
 }
 
@@ -185,7 +179,8 @@ void FDBApp::restart_gdb()
   gdb.setStandardOutputFile(ui->gdbDock->ptyname().toLatin1());
   gdb.setStandardErrorFile(ui->gdbDock->ptyname().toLatin1());
 
-  // gdb.setWorkingDirectory("..?..");
+  QDir cwd;
+  gdb.setWorkingDirectory(cwd.absolutePath());
 
   gdb.start("/bin/gdb -ex \"set pagination off\"");
   gState = Initializing;
@@ -208,25 +203,47 @@ void FDBApp::attach_to_factorio()
   effluent_t worker([&] (influent_t& src) {
     ui->gdbmiDock->write("-target-attach %d", factorio.pid());
     do { src(); } while (!src.get()->text.contains("^done"));
-    ui->gdbmiDock->write("100-data-evaluate-expression \"(long)dlopen(\\\x22/home/joya/localdev/factinject/fdbstub/builds/debug/libfdbstub.so\\\x22, 2)\"");
-    do { src(); } while (!src.get()-> text.startsWith("100^done"));
-    QRegExp retvalue_regex(QLatin1String("value=\"(\\d+)\""));
-    int pos = retvalue_regex.indexIn(src.get()->text, 8);
-    if (pos != -1) {
-      // address of stub at:
-      QString cap = retvalue_regex.cap(1);
-      bool ok = false;
-      unsigned long long dlhandle = cap.toULongLong(&ok,10);
-      Logger::print("Injected stub at 0x%llx", dlhandle);
-    } else {
-      // Couldn't find address of stub
-      Logger::print("Couldn't inject stub executable.");
-    }
-
-    ui->gdbmiDock->write("-file-symbol-file /home/joya/localdev/factinject/fdbstub/builds/debug/libfdbstub.so.1.0.0");
-    do { src(); } while (!src.get()->text.contains("^done"));
 
     ui->gdbmiDock->write("-file-symbol-file /home/joya/games/factorio/bin/x64/factorio");
+    do { src(); } while (!src.get()->text.contains("^done"));
+
+    // Here we try to dlopen() the stub.
+    // If it fails, this is often because we're in a system call or some other sensitive low-level library call.
+    // Just finish the current stack frame and try again.
+    const int max_retries = 8;
+    int retries = 0;
+    int pos = 0;
+    do {
+      ui->gdbmiDock->write("100-data-evaluate-expression \"(long)dlopen(\\\x22%s%s\\\x22)\"", QDir::currentPath().toLatin1().data(), "/fdbstub/builds/debug/libfdbstub.so.1.0.0");
+      do { src(); } while (!src.get()-> text.startsWith("100^done"));
+      QRegExp retvalue_regex(QLatin1String("value=\"(\\d+)\""));
+      pos = retvalue_regex.indexIn(src.get()->text, 8);
+      if (pos != -1) {
+        // address of stub at:
+        QString cap = retvalue_regex.cap(1);
+        bool ok = false;
+        unsigned long long dlhandle = cap.toULongLong(&ok,10);
+        if (dlhandle == 0) {
+          Logger::error("libfdbstub.so did not load properly%s", ++retries < max_retries ? ", retrying in a higher stack frame." : "");
+          if (retries < max_retries) {
+            ui->gdbmiDock->write("-exec-finish");
+            do { src(); } while (!src.get()-> text.startsWith("*stopped"));
+          } else {
+            Logger::error("Bailing after %d attempts.", max_retries);
+            return;
+          }
+        } else {
+          Logger::print("Loaded libfdbstub.so at 0x%llx", dlhandle);
+          break;
+        }
+      } else {
+        // Couldn't find address of stub
+        Logger::error("Couldn't inject stub executable, and did not get a proper return value back from dlopen()");
+        return;
+      }
+    } while (retries < max_retries);
+
+    ui->gdbmiDock->write("-file-symbol-file fdbstub/builds/debug/libfdbstub.so.1.0.0");
     do { src(); } while (!src.get()->text.contains("^done"));
 
     ui->gdbmiDock->write("101-data-evaluate-expression stub_init()");
@@ -310,7 +327,7 @@ void FDBApp::attach_gdbmi()
 void FDBApp::parse_gdb_lines(QTerminalIOEvent& event)
 {
   if (!gdbpid) {
-    // HACK: it's a bit hacky to grab/store this here, but before this we aren't assured of a gdb process pid
+    // HACK: it's a bit hacky to grab/store this here, but before these events, we aren't assured of a gdb process pid
     gdbpid = static_cast<int>(gdb.pid());
   }
   bool combinedInitialized = (gState == Initialized) && (fState == Initialized);
@@ -329,7 +346,7 @@ void FDBApp::parse_factorio_lines(QTerminalIOEvent& event)
   bool combinedInitialized = (gState == Initialized) && (fState == Initialized);
   if (fState != Initialized && event.text.contains("Factorio")) {
     fState = Initialized;
-    Logger::info("Factorio initialization is complete.");
+    //Logger::info("Factorio initialization is complete.");
   }
   if (!combinedInitialized && (gState == Initialized && fState == Initialized)) {
     // integration edge

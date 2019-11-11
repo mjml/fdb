@@ -37,6 +37,7 @@ struct autoclosing_fd {
 	const autoclosing_fd& operator= (autoclosing_fd& illegal) = delete;
 	operator int() { return fd; }
 };
+typedef std::shared_ptr<autoclosing_fd>    autoclosing_pfd;
 
 struct EPollListener
 {
@@ -66,10 +67,10 @@ struct EPollListener
 
   typedef ret_t                      func_t(const struct epoll_event& eev);
   typedef std::function<func_t>      handler_t;
-  typedef std::shared_ptr<autoclosing_fd>    pfd_t;
+  typedef autoclosing_pfd            pfd_t;
 
-  pfd_t    pfd;
-  uint32_t events;
+  pfd_t     pfd;
+  uint32_t  events;
   handler_t handler;
 
   EPollListener(pfd_t _pfd, uint32_t _events, std::function<func_t>&& f) : pfd(_pfd), events(_events), handler(f) {}

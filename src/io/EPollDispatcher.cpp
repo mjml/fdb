@@ -25,10 +25,6 @@ EPollListener::ret_t SingleClientAcceptor::acceptFunction (const struct epoll_ev
       return ret_t{false,0,0};
     }
 
-    int flags = fcntl(newfd, F_GETFL, 0);
-    int r = fcntl(newfd, F_SETFL, flags | O_NONBLOCK);
-    assert_re(r != -1, "Couldn't set socket options for new client socket %d [%s]", newfd, strerror(errno) );
-
     int oldfd = *pfd;
 
     Logger::debug("Accepted client connection on newfd=%d, pivoting...", newfd);
@@ -53,12 +49,6 @@ EPollListener::ret_t SingleClientAcceptor::acceptFunction (const struct epoll_ev
 
 EPollListener::~EPollListener ()
 {
-  /*
-  if (pfd.use_count() == 1) {
-	  ::close(*pfd);
-	}
-	pfd.reset();
-  */
 
 }
 

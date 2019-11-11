@@ -48,6 +48,11 @@ private:
   int               outbuf_siz;
   char              outbuf[outbuf_max_siz];
 
+  static constexpr int inbuf_max_siz = 65536;
+  int               inbuf_idx;
+  int               inbuf_siz;
+  char              inbuf[inbuf_max_siz];
+
 public:
   QTerminalDock();
   QTerminalDock(QWidget* parent);
