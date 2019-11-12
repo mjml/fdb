@@ -78,7 +78,7 @@ needlogger.input = SOURCES_GENERIC_NEEDLOGGER
 needlogger.dependency_type = TYPE_C
 needlogger.variable_out = OBJECTS
 needlogger.output = ${QMAKE_VAR_OBJECTS_DIR}${QMAKE_FILE_IN_BASE}$${first(QMAKE_EXT_OBJ)}
-needlogger.commands = $${QMAKE_CXX} $(CXXFLAGS) -O0 $(INCPATH) -include ../fdb_logger.hpp -c ${QMAKE_FILE_IN} -o ${QMAKE_FILE_OUT} # Note the -O0
+needlogger.commands = $${QMAKE_CXX} $(CXXFLAGS) -O0 $(INCPATH) -include ../../fdb_logger.hpp -c ${QMAKE_FILE_IN} -o ${QMAKE_FILE_OUT} # Note the -O0
 QMAKE_EXTRA_COMPILERS += needlogger
 
 qnx: target.path = /tmp/$${TARGET}/bin
