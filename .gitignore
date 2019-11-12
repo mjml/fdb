@@ -9,3 +9,4 @@ ext/*
 fdb.log
 fdb/Makefile
 fdbstub/Makefile
+.qmake_stash
