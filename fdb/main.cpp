@@ -6,19 +6,7 @@
 #include "util/log.hpp"
 
 #include "fdbapp.h"
-#include "fdb_logger.hpp"
 
-// The Stdio Sink: (this is now provided by log.hpp by default)
-const char stdioname[] = "stdio";
-template class Log<100,stdioname,FILE>;
-
-// The File log Sink:
-const char mainlogfilename[] = "logfile";
-template class Log<100,mainlogfilename,FILE>;
-
-// The main application logger, which sends its output to each of the previous sinks. No more popen("tee ...") !
-const char applogname[] = "fdb";
-template class Log<LOGLEVEL_FACTINJECT,applogname,StdioSink,MainLogFileSink>;
 
 void sigquit_handler (int sig, siginfo_t *info, void *ucontext);
 
@@ -37,7 +25,6 @@ int main (int argc, char *argv[])
   sigaction(SIGINT, &sa, nullptr);
 
   StdioSink::initialize_with_handle(stdout);
-  MainLogFileSink::initialize_with_filename("fdb.log");
   Logger::initialize();
   EPollDispatcher::initialize();
 
@@ -54,7 +41,6 @@ int main (int argc, char *argv[])
 
   EPollDispatcher::finalize();
   Logger::finalize();
-  MainLogFileSink::finalize();
   StdioSink::finalize();
 
   return r;

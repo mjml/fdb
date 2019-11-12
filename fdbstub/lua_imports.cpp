@@ -1,6 +1,6 @@
 #define LUA_IMPORTS_CPP
 
-#include "fdbstub_logger.hpp"
+#include "util/log.hpp"
 #include "Inject.hpp"
 #include "lua_imports.hpp"
 
@@ -11,10 +11,6 @@
     Logger::warning("Couldn't bind symbol: %s", e.what()); \
   } 
 
-/*
-#define BIND(s) \
-	s = reinterpret_cast<decltype(s)>(tracee->FindSymbolAddressByPattern(#s));
-*/
 #define BIND(s) SAFE_BIND(s)
 
 void bind_imports (Tracee* tracee)

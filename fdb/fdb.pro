@@ -29,14 +29,14 @@ QMAKE_CXXFLAGS += -std=c++17 -Wno-format-security
 
 
 SOURCES += \
-#        ../src/Inject.cpp \
-#        ../src/io/EPollDispatcher.cpp \
+        ../src/Inject.cpp \
+        ../src/io/EPollDispatcher.cpp \
         ../src/util/log.cpp \
         FactorioProcess.cpp \
         fdbapp.cpp \
         fdbapp_actions.cpp \
         gui/QOptionsDock.cpp \
-#        gui/QTerminalDock.cpp \
+        gui/QTerminalDock.cpp \
         gui/QTerminalIOEvent.cpp \
         main.cpp \
         util/GDBProcess.cpp
@@ -45,7 +45,6 @@ HEADERS += \
         ../src/Inject.hpp \
         ../src/io/EPollDispatcher.h \
         ../src/ipc/mqueue.hpp \
-        ../src/lua_imports.hpp \
         ../src/util/co_work_queue.hpp \
         ../src/util/errno_exception.hpp \
         ../src/util/exceptions.hpp \
@@ -53,7 +52,6 @@ HEADERS += \
         ../src/util/safe_deque.hpp \
         ../src/util/text_response.hpp \
         FactorioProcess.h \
-        fdb_logger.hpp \
         fdbapp.h \
         gui/QOptionsDock.h \
         gui/QTerminalDock.h \
@@ -69,10 +67,10 @@ FORMS += \
 # Default rules for deployment.
 debug {
   DEFINES += DEBUG
-  DEFINES += LOGLEVEL_FACTINJECT=100
+  DEFINES += LOGLEVEL=100
 }
 
-SOURCES_GENERIC_NEEDLOGGER = ../src/Inject.cpp ../src/io/EPollDispatcher.cpp gui/QTerminalDock.cpp
+SOURCES_GENERIC_NEEDLOGGER =
 needlogger.name = needlogger
 needlogger.input = SOURCES_GENERIC_NEEDLOGGER
 needlogger.dependency_type = TYPE_C

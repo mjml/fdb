@@ -130,4 +130,16 @@ inline void Log<Level,Name,Sinks...>::log_at_level (const char* fmt, Ps...ps)
 
 }
 
+// The Stdio Sink: (this is now provided by log.hpp by default)
+extern const char stdioname[];
+extern template struct Log<100,stdioname,FILE>;
+typedef Log<100,stdioname,FILE> StdioSink;
+
+// The main application logger, which sends its output to each of the previous sinks. No more popen("tee ...") !
+extern const char applogname[];
+extern template struct Log<LOGLEVEL,applogname,StdioSink>;
+typedef Log<LOGLEVEL,applogname,StdioSink> Logger;
+
+
+
 #endif

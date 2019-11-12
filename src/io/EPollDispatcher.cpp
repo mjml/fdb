@@ -5,6 +5,7 @@
 #include <mutex>
 #include "util/safe_deque.hpp"
 #include "util/exceptions.hpp"
+#include "util/log.hpp"
 #include "EPollDispatcher.h"
 
 std::shared_ptr<EPollDispatcher> EPollDispatcher::appioDispatch;

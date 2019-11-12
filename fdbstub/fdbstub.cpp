@@ -3,20 +3,13 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 
+#include "util/log.hpp"
+
 // not sure which of these strategies will work best
 #include "lua_imports.hpp"  // manual linking (tedious, possibly incomplete)
 //#include <lua.h>          // include our own binaries (dangerous, possibly fatal)
 
-#include "fdbstub_logger.hpp"
-
 using namespace lua_imports;
-
-const char stdioname[] = "stdio";
-template struct Log<100,stdioname,FILE>;
-
-const char applogname[] = "fdbstb";
-template struct Log<LOGLEVEL_FDBSTUB,applogname,StdioSink>;
-
 using namespace std;
 
 int write_shared (lua_State* state);

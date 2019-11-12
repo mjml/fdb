@@ -2,6 +2,7 @@
 #include "ui_mainwindow.h"
 #include "ui_settings.h"
 #include "util/exceptions.hpp"
+#include "util/log.hpp"
 #include "gui/QTerminalDock.h"
 #include "util/GDBProcess.h"
 #include <sys/types.h>
@@ -13,7 +14,6 @@
 #include <QtConcurrent/QtConcurrent>
 #include <QThreadPool>
 
-#include "fdb_logger.hpp"
 
 int gdbpid = 0;
 

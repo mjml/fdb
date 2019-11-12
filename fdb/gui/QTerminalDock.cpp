@@ -109,7 +109,6 @@ QTerminalDock::QTerminalDock (QWidget *parent)
 
 QTerminalDock::~QTerminalDock ()
 {
-  // TODO unregister EpollDispatch listener
   destroyPty();
 }
 
