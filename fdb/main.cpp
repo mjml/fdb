@@ -6,6 +6,7 @@
 #include "util/log.hpp"
 
 #include "fdbapp.h"
+#include "fdb_logger.hpp"
 
 // The Stdio Sink: (this is now provided by log.hpp by default)
 const char stdioname[] = "stdio";

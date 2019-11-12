@@ -13,6 +13,8 @@
 #include <QtConcurrent/QtConcurrent>
 #include <QThreadPool>
 
+#include "fdb_logger.hpp"
+
 int gdbpid = 0;
 
 FDBApp::FDBApp(QWidget *parent) :

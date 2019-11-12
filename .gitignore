@@ -7,3 +7,5 @@ exp?
 builds/
 ext/*
 fdb.log
+fdb/Makefile
+fdbstub/Makefile

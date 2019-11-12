@@ -1,6 +1,8 @@
-#define __LUA_IMPORTS_CPP
-#include "lua_imports.hpp"
+#define LUA_IMPORTS_CPP
+
+#include "fdbstub_logger.hpp"
 #include "Inject.hpp"
+#include "lua_imports.hpp"
 
 #define SAFE_BIND(s) \
 	try { \

@@ -29,14 +29,14 @@ QMAKE_CXXFLAGS += -std=c++17 -Wno-format-security
 
 
 SOURCES += \
-        ../src/Inject.cpp \
-        ../src/io/EPollDispatcher.cpp \
+#        ../src/Inject.cpp \
+#        ../src/io/EPollDispatcher.cpp \
         ../src/util/log.cpp \
         FactorioProcess.cpp \
         fdbapp.cpp \
         fdbapp_actions.cpp \
         gui/QOptionsDock.cpp \
-        gui/QTerminalDock.cpp \
+#        gui/QTerminalDock.cpp \
         gui/QTerminalIOEvent.cpp \
         main.cpp \
         util/GDBProcess.cpp
@@ -68,10 +68,18 @@ FORMS += \
 
 # Default rules for deployment.
 debug {
-  QMAKE_CXXFLAGS += -I../../../src  -include ../../fdb_logger.hpp
   DEFINES += DEBUG
   DEFINES += LOGLEVEL_FACTINJECT=100
 }
+
+SOURCES_GENERIC_NEEDLOGGER = ../src/Inject.cpp ../src/io/EPollDispatcher.cpp gui/QTerminalDock.cpp
+needlogger.name = needlogger
+needlogger.input = SOURCES_GENERIC_NEEDLOGGER
+needlogger.dependency_type = TYPE_C
+needlogger.variable_out = OBJECTS
+needlogger.output = ${QMAKE_VAR_OBJECTS_DIR}${QMAKE_FILE_IN_BASE}$${first(QMAKE_EXT_OBJ)}
+needlogger.commands = $${QMAKE_CXX} $(CXXFLAGS) -O0 $(INCPATH) -include ../fdb_logger.hpp -c ${QMAKE_FILE_IN} -o ${QMAKE_FILE_OUT} # Note the -O0
+QMAKE_EXTRA_COMPILERS += needlogger
 
 qnx: target.path = /tmp/$${TARGET}/bin
 else: unix:!android: target.path = /opt/$${TARGET}/bin

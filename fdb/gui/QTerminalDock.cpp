@@ -202,9 +202,11 @@ void QTerminalDock::destroyPty()
 {
   // actually closing the fd is the sole responsibility of the slave
   auto appioDispatch = EPollDispatcher::def();
-  appioDispatch->stop_listen(*_ptfd);
+  if (_ptfd) {
+    appioDispatch->stop_listen(*_ptfd);
+    _ptfd.reset();
+  }
 
-  _ptfd.reset();
 }
 
 
@@ -229,24 +231,18 @@ EPollListener::ret_t QTerminalDock::onEPollIn (const struct epoll_event& eev) tr
   inbuf_idx += r;
 
   do {
-    if (inbuf[i] == '\n' || inbuf_idx >= inbuf_max_siz) { // complete line or overflow
-      QByteArray ba(inbuf, i+1);
-      auto text = QString::fromLatin1(ba);
-      auto tioev = new QTerminalIOEvent(std::move(text));
-      strncpy(inbuf, inbuf+i+1, static_cast<size_t>(r-i-1));
-      inbuf_idx -= (i+1);
-      QCoreApplication::postEvent(this, tioev);
+    QByteArray ba(inbuf, i+1);
+    auto text = QString::fromLatin1(ba);
+    auto tioev = new QTerminalIOEvent(std::move(text));
+    strncpy(inbuf, inbuf+i+1, static_cast<size_t>(r-i-1));
+    inbuf_idx -= (i+1);
+    QCoreApplication::postEvent(this, tioev);
 
-      // if there is remaining text, scan for a new line from the start
-      if (inbuf_idx == 0) {
-        break;
-      } else {
-        for (i=0; i<inbuf_idx && inbuf[i] != '\n'; i++) { }
-      }
-
-    } else { // incomplete line
-      inbuf_idx += r; // set inbuf_idx to where the null terminator is, it will be the next byte written.
+    // if there is remaining text, scan for a new line from the start
+    if (inbuf_idx == 0) {
       break;
+    } else {
+      for (i=0; i<inbuf_idx && inbuf[i] != '\n'; i++) { }
     }
   } while(1);
 
