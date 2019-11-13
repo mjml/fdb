@@ -11,34 +11,7 @@
 #include <sys/epoll.h>
 #include <sys/socket.h>
 #include <unistd.h>
-
-
-struct autoclosing_fd {
-	int fd;
-	autoclosing_fd(int fdesc) : fd(fdesc) {
-		//Logger::debug2("autoclosing_fd constructed with .fd=%d, fdesc=%d", fd, fdesc);
-	}
-	~autoclosing_fd() {
-		//Logger::debug2("autoclosing_fd destroyed with .fd=%d", fd);
-		if (fd) {
-			::close(fd);
-		}
-	}
-	const autoclosing_fd& operator= (int fdesc) {
-		//Logger::debug2("assigning autoclosing_fd from int (not from autoclosing_fd&&)");
-		fd = fdesc;
-		return *this;
-	}
-	const autoclosing_fd& operator= (autoclosing_fd&& moved) {
-		fd = moved.fd;
-		moved.fd = 0;
-		return *this;
-	}
-	const autoclosing_fd& operator= (const autoclosing_fd& illegal) = delete;
-	const autoclosing_fd& operator= (autoclosing_fd& illegal) = delete;
-	operator int() { return fd; }
-};
-typedef std::shared_ptr<autoclosing_fd>    autoclosing_pfd;
+#include "autoclosing_fd.h"
 
 struct EPollListener
 {

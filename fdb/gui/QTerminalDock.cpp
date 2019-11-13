@@ -183,7 +183,7 @@ void QTerminalDock::createPty()
   // problematic, seems to randomize certain ty behaviours
   int fd = getpt();
   if (fd == -1) errno_runtime_error;
-  _ptfd = std::make_shared<autoclosing_fd>(fd);
+  _ptfd = std::make_shared<vanilla_fd>(fd);
 
   int r = ioctl(*_ptfd, TIOCSWINSZ, &win);
   assert_re(r==0, "Couldn't set window size on the pseudoterminal (%s)", strerror(errno));
@@ -224,24 +224,26 @@ EPollListener::ret_t QTerminalDock::onEPollIn (const struct epoll_event& eev) tr
   // Append the new null terminator
   inbuf[inbuf_idx+r] = 0;
 
-  // scan for a new linefeed in the new portion of the buffer
+  // Scan for a new linefeed in the new portion of the buffer
   int i=0;
   for (i=inbuf_idx; i<r && inbuf[i] != '\n'; i++) { }
   inbuf_idx += r;
 
   do {
-    QByteArray ba(inbuf, i+1);
-    auto text = QString::fromLatin1(ba);
+    auto text = QString::fromLatin1(inbuf, i+1);
     auto tioev = new QTerminalIOEvent(std::move(text));
-    strncpy(inbuf, inbuf+i+1, static_cast<size_t>(r-i-1));
+    for (int j=0; inbuf[i+1+j] && i+1+j < inbuf_idx; j++) {
+        inbuf[j] = inbuf[i+1+j];
+    }
     inbuf_idx -= (i+1);
     QCoreApplication::postEvent(this, tioev);
 
-    // if there is remaining text, scan for a new line from the start
+    // If there is remaining text, scan for a new line from the start
     if (inbuf_idx == 0) {
       break;
     } else {
       for (i=0; i<inbuf_idx && inbuf[i] != '\n'; i++) { }
+      if (i==inbuf_idx) i--;
     }
   } while(1);
 
@@ -257,6 +259,7 @@ EPollListener::ret_t QTerminalDock::onEPollIn (const struct epoll_event& eev) tr
 }
 
 
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 EPollListener::ret_t QTerminalDock::onEPollOut (const struct epoll_event& eev)
 try {
   EPollListener::ret_t ret;

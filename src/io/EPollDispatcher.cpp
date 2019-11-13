@@ -11,6 +11,7 @@
 std::shared_ptr<EPollDispatcher> EPollDispatcher::appioDispatch;
 
 
+
 EPollListener::ret_t SingleClientAcceptor::acceptFunction (const struct epoll_event& eev) {
   int newfd = 0;
   if (eev.events & EPOLLIN) {
@@ -145,7 +146,7 @@ void EPollDispatcher::add_listener (EPollListener* listener)
 {
   std::lock_guard lock(mut);
   bool is_new = eventMap.find(*listener->pfd) == eventMap.end();
-  listeners.emplace(listener->pfd->fd, listener);
+  listeners.insert({listener->pfd->fd, listener});
   if (is_new) {
     struct epoll_event mod_events;
     mod_events.events = listener->events & ~EPOLLOUT; // when adding a new EPOLLOUT listener, don't enable the event straightaway

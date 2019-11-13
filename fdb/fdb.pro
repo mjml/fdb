@@ -25,12 +25,13 @@ INCLUDEPATH += ../src
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
 
 #CONFIG +=
-QMAKE_CXXFLAGS += -std=c++17 -Wno-format-security
+QMAKE_CXXFLAGS += -std=c++17 -Wno-format-security -O0
 
 
 SOURCES += \
         ../src/Inject.cpp \
         ../src/io/EPollDispatcher.cpp \
+        ../src/io/autoclosing_fd.cpp \
         ../src/util/log.cpp \
         FactorioProcess.cpp \
         fdbapp.cpp \

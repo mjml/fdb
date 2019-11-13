@@ -33,7 +33,7 @@ FDBApp::FDBApp(QWidget *parent) :
 
   read_settings();
 
-  initialize_actions();
+  //initialize_actions();
 
 
 }
@@ -55,8 +55,8 @@ FDBApp::~FDBApp()
     gState = NotRunning;
   }
   delete ui;
-
 }
+
 
 void FDBApp::initialize_fdbsocket()
 {
@@ -93,8 +93,8 @@ void FDBApp::initialize_fdbsocket()
   appioDispatch->start_singleclient_listener(fdbsocket,
                                              std::bind(&FDBApp::on_fdbsocket_event,
                                                        this, std::placeholders::_1));
-
 }
+
 
 void FDBApp::finalize_fdbsocket()
 {
@@ -186,7 +186,6 @@ void FDBApp::restart_gdb()
 
   gdb.start("/bin/gdb -ex \"set pagination off\"");
   gState = Initializing;
-
 }
 
 
@@ -199,6 +198,7 @@ void FDBApp::kill_gdb()
   gdb.kill();
   gdb.waitForFinished(-1);
 }
+
 
 void FDBApp::attach_to_factorio()
 {
@@ -295,6 +295,7 @@ void FDBApp::attach_to_factorio()
   workq.push_worker(std::move(worker));
 }
 
+
 void FDBApp::attach_gdbmi()
 {
   if (gdb.state() != QProcess::Running) {
@@ -307,8 +308,6 @@ void FDBApp::attach_gdbmi()
   }
 
   ui->gdbmiDock->createPty();
-  // TODO: move into createPty()
-  //ui->gdbmiDock->startIOThread();
 
   auto ba = ui->gdbmiDock->ptyname().toLatin1();
   char* name = ba.data();
@@ -323,8 +322,8 @@ void FDBApp::attach_gdbmi()
   QTerminalIOEvent initial;
   worker(&initial);
   workq.push_worker(std::move(worker));
-
 }
+
 
 void FDBApp::parse_gdb_lines(QTerminalIOEvent& event)
 {
@@ -343,6 +342,7 @@ void FDBApp::parse_gdb_lines(QTerminalIOEvent& event)
   }
 }
 
+
 void FDBApp::parse_factorio_lines(QTerminalIOEvent& event)
 {
   bool combinedInitialized = (gState == Initialized) && (fState == Initialized);
@@ -354,14 +354,15 @@ void FDBApp::parse_factorio_lines(QTerminalIOEvent& event)
     // integration edge
     attach_to_factorio();
   }
-
 }
+
 
 void FDBApp::parse_gdbmi_lines(QTerminalIOEvent& event)
 {
   //char* pc = qs.toLatin1().data();
   workq.push_input(&event);
 }
+
 
 void FDBApp::on_factorio_finished (int exitCode, QProcess::ExitStatus exitStatus)
 {
@@ -370,20 +371,24 @@ void FDBApp::on_factorio_finished (int exitCode, QProcess::ExitStatus exitStatus
   ui->actionFactorioMode->setText("Run Factorio");
 }
 
+
 void FDBApp::on_gdb_finished (int exitCode, QProcess::ExitStatus exitStatus)
 {
   gState = NotRunning;
 }
+
 
 EPollListener::ret_t FDBApp::on_fdbsocket_event (const epoll_event &eev)
 {
 
 }
 
+
 EPollListener::ret_t FDBApp::on_fdbstubsocket_event (const epoll_event &eev)
 {
 
 }
+
 
 void FDBApp::showEvent(QShowEvent *event)
 {
