@@ -50,7 +50,6 @@ private:
 
   static constexpr int inbuf_max_siz = 65536;
   int               inbuf_idx;
-  int               inbuf_siz;
   char              inbuf[inbuf_max_siz];
 
 public:
@@ -98,6 +97,9 @@ public:
    */
   void write (const char* fmt, ...);
 
+  std::list<QString> accept_suffixes;
+
+
 signals:
   void output (QTerminalIOEvent& ioEvent);
   void input (const QString& qs);
@@ -124,6 +126,8 @@ protected:
   EPollListener::ret_t onEPollIn (const struct epoll_event& eev);
 
   EPollListener::ret_t onEPollOut (const struct epoll_event& eev);
+
+  EPollListener::ret_t onEPollHup (const struct epoll_event& eev);
 
 };
 

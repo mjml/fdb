@@ -41,6 +41,13 @@ EPollListener::ret_t SingleClientAcceptor::acceptFunction (const struct epoll_ev
   } else if (eev.events & EPOLLHUP) {
     // could happen during an incomplete handshake, for example.
     Logger::warning("SingleClientAcceptor's socket received HUP");
+  } else if (eev.events & EPOLLRDHUP) {
+    Logger::warning("SingleClientAcceptor's socket received RDHUP");
+  } else if (eev.events & EPOLLERR) {
+    Logger::error("SingleClientAcceptor encountered an error. fd will be close()'d");
+    ::close(pfd->fd);
+  } else if (eev.events & EPOLLPRI) {
+    Logger::fuss("SingleClientAcceptor encountered an exceptional condition for fd=%d", pfd->fd);
   }
 
   // Must return 0,0 here since the EPOLLIN handler will be calling
@@ -93,32 +100,78 @@ void EPollDispatcher::run ()
   while (running) {
     eev.data.u64 = 0;
     eev.events = 0;
-    r = epoll_wait(_epoll, &eev, 1, 400);
-
-    mut.lock();
+    r = epoll_wait(_epoll, &eev, 64, 400);
 
     int fd = eev.data.fd;
     if (r > 0) {
+      bool handled = false;
+      mut.lock();
       auto bkt = listeners.bucket(fd);
       for (auto it = listeners.begin(bkt); it != listeners.end(bkt); it++) {
         const EPollListener* listener = it->second;
         if (eev.events & listener->events) {
           auto p = listener->handler(eev);
+          handled = true;  // note difference between handled and p.handled
           if (p.add|| p.rem) {
             modify(fd, p.add, p.rem);
             if (p.handled) break; // if the listener signals to end the event, avert further listening
           }
         }
       }
-    }
+      if (!handled) {
+        std::string evdesc;
+        if (eev.events & EPOLLIN) {
+          evdesc += "EPOLLIN|";
+        }
+        if (eev.events & EPOLLOUT) {
+          evdesc += "EPOLLOUT|";
+        }
+        if (eev.events & EPOLLERR) {
+          evdesc += "EPOLLERR|";
+        }
+        if (eev.events & EPOLLHUP) {
+          evdesc += "EPOLLHUP|";
+        }
+        if (eev.events & EPOLLPRI) {
+          evdesc += "EPOLLPRI|";
+        }
+        if (!evdesc.empty()) evdesc.erase(evdesc.end()-1, evdesc.end());
+        Logger::fuss("Unhandled (%s) event for fd=%d, events=0x%x", evdesc.c_str(), eev.data.fd, eev.events);
 
-    mut.unlock();
+        if (eev.events & EPOLLHUP || eev.events & EPOLLERR) {
+          Logger::warning("Stopping listeners for fd=%d", eev.data.fd);
+          stop_listen(eev.data.fd);
+        }
+      }
+      mut.unlock();
+    }
 
     if (r == -1) {
       if (error_handler) {
         error_handler(errno);
+      } else {
+        default_error_handler(errno);
       }
     }
+  }
+}
+
+void EPollDispatcher::default_error_handler(int errcode)
+{
+  if (errcode == EINTR) {
+    Logger::fuss("EPollDispatcher received signal during epoll_wait");
+  } else if (errcode == EINVAL) {
+    Logger::critical("EPollDispatcher: epoll_wait called on an object that is not an epoll. This is surely wrong so the thread is exiting.");
+    running = false;
+  } else if (errcode == EFAULT) {
+    Logger::critical("EPollDispatcher: events field was not accessible with write permissions. The epoll_event should be created on the stack and so this shouldn't occur. Exiting thread.");
+    running = false;
+  } else if (errcode == EBADF) {
+    Logger::error("Bad file descriptor passed to epoll_wait(), exiting thread.");
+    running = false;
+  } else {
+    Logger::critical("Unidentifiable error returned by epoll_wait[%d], exiting thread.", errcode);
+    running = false;
   }
 }
 

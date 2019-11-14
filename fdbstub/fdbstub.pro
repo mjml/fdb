@@ -4,8 +4,8 @@ CONFIG -= app_bundle
 CONFIG -= qt
 
 SOURCES += \
-#    ../src/Inject.cpp \
-#    ../src/io/EPollDispatcher.cpp \
+    ../src/Inject.cpp \
+    ../src/io/EPollDispatcher.cpp \
     ../src/util/log.cpp \
     lua_imports.cpp \
     fdbstub.cpp
@@ -67,5 +67,5 @@ needlogger.output = ${QMAKE_VAR_OBJECTS_DIR}${QMAKE_FILE_IN_BASE}$${first(QMAKE_
 needlogger.commands = $${QMAKE_CXX} $(CXXFLAGS) $(INCPATH) -c ${QMAKE_FILE_IN} -o ${QMAKE_FILE_OUT} # Note the -O0
 QMAKE_EXTRA_COMPILERS += needlogger
 
-unix:!macx: LIBS += $$PWD/../ext/lua-5.2.1/src/liblua.a
+#unix:!macx: LIBS += $$PWD/../ext/lua-5.2.1/src/liblua.a
 unix: QMAKE_LFLAGS += -rdynamic

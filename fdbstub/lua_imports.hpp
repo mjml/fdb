@@ -5,7 +5,7 @@
 
 #define LUA_IDSIZE      60
 
-#ifndef __LUA_IMPORTS_CPP
+#ifndef LUA_IMPORTS_CPP
 #define EXTERN   extern
 #else
 #define EXTERN

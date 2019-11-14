@@ -109,13 +109,13 @@ template<int Level, const char* Name, typename...Sinks>
 template<typename...Ps>
 inline void Log<Level, Name, Sinks...>::fmtprint (int lvl, const char* fmt, Ps...ps)
 {
-	char entry[1024];
-	char msg[960];
-	int chrs = snprintf(msg,960,fmt,ps...);
+	char entry[16384];
+	char msg[16384];
+	int chrs = snprintf(msg,16000,fmt,ps...);
 	
 	struct timespec ts;
 	clock_gettime(CLOCK_MONOTONIC_COARSE, &ts); 
-	chrs = snprintf(entry, 1024,"%ld.%06ld [%s-%d] %s", ts.tv_sec, ts.tv_nsec/1000, Name, lvl, msg);
+	chrs = snprintf(entry, 16383, "%ld.%06ld [%s-%d] %s", ts.tv_sec, ts.tv_nsec/1000, Name, lvl, msg);
 	
 	write(entry,chrs);
 }

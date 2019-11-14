@@ -33,8 +33,7 @@ FDBApp::FDBApp(QWidget *parent) :
 
   read_settings();
 
-  //initialize_actions();
-
+  initialize_actions();
 
 }
 
@@ -55,6 +54,7 @@ FDBApp::~FDBApp()
     gState = NotRunning;
   }
   delete ui;
+  ui = nullptr;
 }
 
 
@@ -173,6 +173,7 @@ void FDBApp::restart_gdb()
     return;
   }
 
+  ui->gdbDock->accept_suffixes = { QString::fromLatin1("(gdb) ") };
   ui->gdbDock->createPty();
 
   Logger::print("Starting gdb with pseudoterminal on %s", ui->gdbDock->ptyname().toLatin1().data());
@@ -216,8 +217,8 @@ void FDBApp::attach_to_factorio()
     int retries = 0;
     int pos = 0;
     do {
-      ui->gdbmiDock->write("100-data-evaluate-expression \"(long)dlopen(\\\x22%s%s\\\x22)\"", QDir::currentPath().toLatin1().data(), "/fdbstub/builds/debug/libfdbstub.so.1.0.0");
-      do { src(); } while (!src.get()-> text.startsWith("100^done"));
+      ui->gdbmiDock->write("100-data-evaluate-expression \"(long)dlopen(\\\x22%s%s\\\x22,2)\"", QDir::currentPath().toLatin1().data(), "/fdbstub/builds/debug/libfdbstub.so.1.0.0");
+      do { src(); } while (!src.get()->text.startsWith("100^done"));
       QRegExp retvalue_regex(QLatin1String("value=\"(\\d+)\""));
       pos = retvalue_regex.indexIn(src.get()->text, 8);
       if (pos != -1) {
@@ -313,6 +314,7 @@ void FDBApp::attach_gdbmi()
   char* name = ba.data();
 
   Logger::print("Creating gdb/mi terminal on %s", name);
+  ui->gdbmiDock->accept_suffixes = { QString::fromLatin1("(gdb) ") };
 
   effluent_t worker([&] (influent_t& src){
     ui->gdbDock->write("new-ui mi2 %s", name);
@@ -348,10 +350,8 @@ void FDBApp::parse_factorio_lines(QTerminalIOEvent& event)
   bool combinedInitialized = (gState == Initialized) && (fState == Initialized);
   if (fState != Initialized && event.text.contains("Factorio")) {
     fState = Initialized;
-    //Logger::info("Factorio initialization is complete.");
   }
   if (!combinedInitialized && (gState == Initialized && fState == Initialized)) {
-    // integration edge
     attach_to_factorio();
   }
 }
@@ -359,7 +359,6 @@ void FDBApp::parse_factorio_lines(QTerminalIOEvent& event)
 
 void FDBApp::parse_gdbmi_lines(QTerminalIOEvent& event)
 {
-  //char* pc = qs.toLatin1().data();
   workq.push_input(&event);
 }
 
@@ -367,8 +366,11 @@ void FDBApp::parse_gdbmi_lines(QTerminalIOEvent& event)
 void FDBApp::on_factorio_finished (int exitCode, QProcess::ExitStatus exitStatus)
 {
   fState = NotRunning;
-  ui->actionFactorioMode->setEnabled(true);
-  ui->actionFactorioMode->setText("Run Factorio");
+
+  if (ui) {
+      ui->actionFactorioMode->setEnabled(true);
+      ui->actionFactorioMode->setText("Run Factorio");
+  }
 }
 
 

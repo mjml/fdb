@@ -28,7 +28,8 @@ QTerminalDock::QTerminalDock()
     _ptfd(),
     _iothread(nullptr),
     outbuf_idx(0),
-    outbuf_siz(0)
+    outbuf_siz(0),
+    inbuf_idx(0)
 {
   QFont mini(QStringLiteral("Monospace"),5);
 
@@ -213,12 +214,14 @@ EPollListener::ret_t QTerminalDock::onEPollIn (const struct epoll_event& eev) tr
 {
   int r = static_cast<int>(::read(eev.data.fd, inbuf+inbuf_idx, static_cast<size_t>(inbuf_max_siz - inbuf_idx - 1)));
   if (r == -1 && errno != EWOULDBLOCK && errno != EAGAIN) {
-    Logger::error("While trying to read data from a pty: %s", strerror(errno));
-    return EPollListener::ret_t{ true, 0, 0 };
-  }
-  if (errno == EWOULDBLOCK || errno == EAGAIN) {
-    // Basically, there are no bytes available. (epoll should prevent this). Just return.
-    return EPollListener::ret_t{ true, 0, 0 };
+    if (errno == EWOULDBLOCK || errno == EAGAIN) {
+      // Basically, there are no bytes available. (epoll should prevent this). Just return.
+      Logger::warning("EWOULDBLOCK received on dock for %s (inbuf_idx=%d)", QWidget::windowTitle().toLatin1().data(), inbuf_idx);
+      return EPollListener::ret_t{ true, 0, 0 };
+    } else {
+      Logger::error("While trying to read data from a pty: %s", strerror(errno));
+      return EPollListener::ret_t{ true, 0, 0 };
+    }
   }
 
   // Append the new null terminator
@@ -227,23 +230,48 @@ EPollListener::ret_t QTerminalDock::onEPollIn (const struct epoll_event& eev) tr
   // Scan for a new linefeed in the new portion of the buffer
   int i=0;
   for (i=inbuf_idx; i<r && inbuf[i] != '\n'; i++) { }
+  if (!inbuf[i]) {
+      i--; // if null terminator was found, back up one
+  }
   inbuf_idx += r;
+
+  int loopcnt = 0;
 
   do {
     auto text = QString::fromLatin1(inbuf, i+1);
-    auto tioev = new QTerminalIOEvent(std::move(text));
-    for (int j=0; inbuf[i+1+j] && i+1+j < inbuf_idx; j++) {
-        inbuf[j] = inbuf[i+1+j];
+    bool accept = text.endsWith('\n');
+    if (!accept) {
+        for (auto it = accept_suffixes.begin(); it != accept_suffixes.end(); it++) {
+            if (text.endsWith(*it)) {
+                accept = true;
+                break;
+            }
+        }
     }
-    inbuf_idx -= (i+1);
-    QCoreApplication::postEvent(this, tioev);
+
+    if (accept) {
+      Logger::debug("Output recvd: %s", text.toLatin1().data());
+      auto tioev = new QTerminalIOEvent(std::move(text));
+      for (int j=0; inbuf[i+1+j] && i+1+j < inbuf_idx; j++) {
+        inbuf[j] = inbuf[i+1+j];
+      }
+      inbuf_idx -= (i+1);
+
+      QCoreApplication::postEvent(this, tioev);
+    } else {
+      Logger::debug("Returning with %d bytes in buffer: \n%s\n%s", inbuf_idx, inbuf, text.data());
+      break;
+    }
 
     // If there is remaining text, scan for a new line from the start
     if (inbuf_idx == 0) {
       break;
     } else {
-      for (i=0; i<inbuf_idx && inbuf[i] != '\n'; i++) { }
-      if (i==inbuf_idx) i--;
+      for (i=0; i<inbuf_idx && inbuf[i] != '\n'; i++) { } // find the next linefeed
+      if (i==inbuf_idx) i--; // if null terminator was found instead, back up one
+    }
+    if (++loopcnt % 100 == 0) {
+      Logger::warning("Looped way too many times while handling input.");
     }
   } while(1);
 
@@ -300,6 +328,13 @@ try {
   auto ev = new QTerminalIOEvent(QLatin1String(msg));
   QCoreApplication::postEvent(this,ev);
   return EPollListener::ret_t{true,0,0};
+}
+
+EPollListener::ret_t QTerminalDock::onEPollHup(const epoll_event &eev)
+{
+  Logger::error("HUP received from fd=%d in %s");
+  destroyPty();
+  return EPollListener::ret_t{true, 0, 0};
 }
 
 

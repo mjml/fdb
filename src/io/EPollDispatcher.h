@@ -129,6 +129,8 @@ public:
 protected:
   void run ();
 
+  void default_error_handler(int errcode);
+
   // default instance, though not the only possible instance
   static std::shared_ptr<EPollDispatcher> appioDispatch;
 

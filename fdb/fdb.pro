@@ -45,6 +45,7 @@ SOURCES += \
 HEADERS += \
         ../src/Inject.hpp \
         ../src/io/EPollDispatcher.h \
+        ../src/io/autoclosing_fd.h \
         ../src/ipc/mqueue.hpp \
         ../src/util/co_work_queue.hpp \
         ../src/util/errno_exception.hpp \
