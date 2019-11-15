@@ -207,9 +207,6 @@ void FDBApp::attach_to_factorio()
     ui->gdbmiDock->write("-target-attach %d", factorio.pid());
     do { src(); } while (!src.get()->text.contains("^done"));
 
-    ui->gdbmiDock->write("-file-symbol-file /home/joya/games/factorio/bin/x64/factorio");
-    do { src(); } while (!src.get()->text.contains("^done"));
-
     // Here we try to dlopen() the stub.
     // If it fails, this is often because we're in a system call or some other sensitive low-level library call.
     // Just finish the current stack frame and try again.
@@ -251,6 +248,9 @@ void FDBApp::attach_to_factorio()
 
     ui->gdbmiDock->write("101-data-evaluate-expression stub_init()");
     do { src(); } while (!src.get()->text.startsWith("101^done"));
+
+    ui->gdbmiDock->write("-file-symbol-file /home/joya/games/factorio/bin/x64/factorio");
+    do { src(); } while (!src.get()->text.contains("^done"));
 
     ui->gdbmiDock->write("-break-insert --function lua_newstate");
     do { src(); } while (!src.get()->text.startsWith("^done"));

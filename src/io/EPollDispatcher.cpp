@@ -139,7 +139,7 @@ void EPollDispatcher::run ()
         Logger::fuss("Unhandled (%s) event for fd=%d, events=0x%x", evdesc.c_str(), eev.data.fd, eev.events);
 
         if (eev.events & EPOLLHUP || eev.events & EPOLLERR) {
-          Logger::warning("Stopping listeners for fd=%d", eev.data.fd);
+          Logger::fuss("Stopping listeners for fd=%d", eev.data.fd);
           stop_listen(eev.data.fd);
         }
       }

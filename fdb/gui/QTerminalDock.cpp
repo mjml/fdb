@@ -241,16 +241,16 @@ EPollListener::ret_t QTerminalDock::onEPollIn (const struct epoll_event& eev) tr
     auto text = QString::fromLatin1(inbuf, i+1);
     bool accept = text.endsWith('\n');
     if (!accept) {
-        for (auto it = accept_suffixes.begin(); it != accept_suffixes.end(); it++) {
-            if (text.endsWith(*it)) {
-                accept = true;
-                break;
-            }
+      for (auto it = accept_suffixes.begin(); it != accept_suffixes.end(); it++) {
+        if (text.endsWith(*it)) {
+          accept = true;
+          break;
         }
+      }
     }
 
     if (accept) {
-      Logger::debug("Output recvd: %s", text.toLatin1().data());
+      //Logger::debug("Output recvd: %s", text.toLatin1().data());
       auto tioev = new QTerminalIOEvent(std::move(text));
       for (int j=0; inbuf[i+1+j] && i+1+j < inbuf_idx; j++) {
         inbuf[j] = inbuf[i+1+j];
@@ -259,7 +259,7 @@ EPollListener::ret_t QTerminalDock::onEPollIn (const struct epoll_event& eev) tr
 
       QCoreApplication::postEvent(this, tioev);
     } else {
-      Logger::debug("Returning with %d bytes in buffer: \n%s\n%s", inbuf_idx, inbuf, text.data());
+      Logger::debug("Returning with %d bytes in buffer: \n%s\n^%s", inbuf_idx, inbuf, text.data());
       break;
     }
 
@@ -288,8 +288,7 @@ EPollListener::ret_t QTerminalDock::onEPollIn (const struct epoll_event& eev) tr
 
 
 #pragma GCC diagnostic ignored "-Wunused-parameter"
-EPollListener::ret_t QTerminalDock::onEPollOut (const struct epoll_event& eev)
-try {
+EPollListener::ret_t QTerminalDock::onEPollOut (const struct epoll_event& eev) try {
   EPollListener::ret_t ret;
   inputQueue.fast_lock();
   if (outbuf_idx < outbuf_siz) {
@@ -329,6 +328,7 @@ try {
   QCoreApplication::postEvent(this,ev);
   return EPollListener::ret_t{true,0,0};
 }
+
 
 EPollListener::ret_t QTerminalDock::onEPollHup(const epoll_event &eev)
 {
