@@ -33,9 +33,10 @@ SOURCES += \
         ../src/io/EPollDispatcher.cpp \
         ../src/io/autoclosing_fd.cpp \
         ../src/util/log.cpp \
-        FactorioProcess.cpp \
+        TraceeProcess.cpp \
         fdbapp.cpp \
         fdbapp_actions.cpp \
+        gui/QMIDock.cpp \
         gui/QOptionsDock.cpp \
         gui/QTerminalDock.cpp \
         gui/QTerminalIOEvent.cpp \
@@ -53,8 +54,9 @@ HEADERS += \
         ../src/util/log.hpp \
         ../src/util/safe_deque.hpp \
         ../src/util/text_response.hpp \
-        FactorioProcess.h \
+        TraceeProcess.h \
         fdbapp.h \
+        gui/QMIDock.h \
         gui/QOptionsDock.h \
         gui/QTerminalDock.h \
         gui/QTerminalIOEvent.h \

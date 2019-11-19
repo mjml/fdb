@@ -22,7 +22,7 @@ void FDBApp::initialize_actions()
 
   connect(ui->gdbmiDock, &QTerminalDock::output, this, &FDBApp::parse_gdbmi_lines);
 
-  connect(&factorio, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this, &FDBApp::on_factorio_finished);
+  connect(&tracee, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this, &FDBApp::on_factorio_finished);
 
   connect(&gdb, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this, &FDBApp::on_gdb_finished);
 }

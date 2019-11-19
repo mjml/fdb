@@ -21,7 +21,7 @@ FDBApp::FDBApp(QWidget *parent) :
   QMainWindow(parent),
   ui(new Ui::MainWindow),
   gdb(this),
-  factorio(this),
+  tracee(this),
   fState(ProgramStart),
   gState(ProgramStart),
   fdbsocket(nullptr),
@@ -42,9 +42,9 @@ FDBApp::~FDBApp()
 {
   write_settings();
 
-  if (factorio.state() == QProcess::Running) {
-    factorio.terminate();
-    factorio.waitForFinished(2000);
+  if (tracee.state() == QProcess::Running) {
+    tracee.terminate();
+    tracee.waitForFinished(2000);
     fState = NotRunning;
   }
   if (gdb.state() == QProcess::Running) {
@@ -132,7 +132,7 @@ void FDBApp::write_settings ()
 
 void FDBApp::start_factorio()
 {
-  if (factorio.state() == QProcess::Running) {
+  if (tracee.state() == QProcess::Running) {
     Logger::warning("Can't start factorio, it is already running!");
     return;
   }
@@ -143,18 +143,18 @@ void FDBApp::start_factorio()
 
   Logger::print("Starting Factorio with pseudoterminal on %s", ui->factorioDock->ptyname().toLatin1().data());
 
-  factorio.setStandardOutputFile(ui->factorioDock->ptyname().toLatin1().data());
-  factorio.setStandardErrorFile(ui->factorioDock->ptyname().toLatin1().data());
+  tracee.setStandardOutputFile(ui->factorioDock->ptyname().toLatin1().data());
+  tracee.setStandardErrorFile(ui->factorioDock->ptyname().toLatin1().data());
 
-  factorio.setWorkingDirectory("/home/joya");
-  factorio.start("/home/joya/games/factorio/bin/x64/factorio");
+  tracee.setWorkingDirectory("/home/joya");
+  tracee.start("/home/joya/games/factorio/bin/x64/factorio");
   fState = Initializing;
 }
 
 
 void FDBApp::kill_factorio()
 {
-  factorio.close();
+  tracee.close();
   ui->factorioDock->destroyPty();
 }
 
@@ -204,7 +204,7 @@ void FDBApp::kill_gdb()
 void FDBApp::attach_to_factorio()
 {
   effluent_t worker([&] (influent_t& src) {
-    ui->gdbmiDock->write("-target-attach %d", factorio.pid());
+    ui->gdbmiDock->write("-target-attach %d", tracee.pid());
     do { src(); } while (!src.get()->text.contains("^done"));
 
     // Here we try to dlopen() the stub.
@@ -361,6 +361,7 @@ void FDBApp::parse_gdbmi_lines(QTerminalIOEvent& event)
 {
   workq.push_input(&event);
 }
+
 
 
 void FDBApp::on_factorio_finished (int exitCode, QProcess::ExitStatus exitStatus)

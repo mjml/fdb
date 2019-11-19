@@ -5,7 +5,7 @@
 #include "gui/QTerminalDock.h"
 #include "util/GDBProcess.h"
 #include "ipc/mqueue.hpp"
-#include "FactorioProcess.h"
+#include "TraceeProcess.h"
 #include <QMainWindow>
 #include <QPlainTextEdit>
 #include <QSettings>
@@ -41,7 +41,7 @@ private:
   Ui::SettingsDialog*  settingsUi;
 
   GDBProcess gdb;
-  FactorioProcess factorio;
+  TraceeProcess tracee;
 
   enum ProgState {
     ProgramStart,
@@ -76,6 +76,7 @@ public slots:
   void parse_factorio_lines(QTerminalIOEvent& event);
 
   void parse_gdbmi_lines(QTerminalIOEvent& event);
+
 
 protected:
   void on_factorio_finished(int exitCode, QProcess::ExitStatus exitStatus);

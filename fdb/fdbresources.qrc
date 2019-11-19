@@ -4,5 +4,8 @@
     </qresource>
     <qresource prefix="/">
         <file>resources/icons/gdb-button.svg</file>
+        <file>resources/icons/amber_light.png</file>
+        <file>resources/icons/green_light.png</file>
+        <file>resources/icons/red_light.png</file>
     </qresource>
 </RCC>
