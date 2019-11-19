@@ -69,6 +69,8 @@ EPollDispatcher::~EPollDispatcher ()
     delete it->second;
   }
   listeners.clear();
+  running = false;
+  join();
 }
 
 
@@ -88,6 +90,10 @@ void EPollDispatcher::join ()
     th->join();
     delete th;
     th = nullptr;
+  }
+  if (_epoll) {
+    close(_epoll);
+    _epoll = 0;
   }
 }
 

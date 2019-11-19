@@ -136,7 +136,6 @@ struct winsize QTerminalDock::terminalDimensions ()
   win.ws_ypixel = static_cast<unsigned short>(metrics.height());
 
   return win;
-
 }
 
 
