@@ -6,6 +6,7 @@
 #include <QLineEdit>
 #include <QCheckBox>
 #include <QPushButton>
+#include <QColor>
 #include <QPlainTextEdit>
 
 #include "gui/QOptionsDock.h"
@@ -30,7 +31,7 @@ public:
    */
   static QEvent::Type ioEventType;
 
-private:
+protected:
   IoView            ioview;
   QPushButton*      lszbtn;
   QLineEdit*        lszedit;
@@ -121,7 +122,7 @@ public slots:
   void returnPressed ();
 
 protected:
-  void onTerminalEvent (QTerminalIOEvent& qs);
+  virtual void onTerminalEvent (QTerminalIOEvent& qs);
 
   EPollListener::ret_t onEPollIn (const struct epoll_event& eev);
 
@@ -136,6 +137,14 @@ void QTerminalDock::writeInput (T qs)
 {
   if (!_ptfd)  return;
   if (!qs.endsWith(('\n'))) qs += '\n';
+
+  QTextCharFormat fmt = outEdit->currentCharFormat();
+  QTextCharFormat saved(fmt);
+  fmt.setFontWeight(QFont::Bold);
+  fmt.setForeground(QBrush(QColor::fromRgb(20,180,30)));
+  outEdit->setCurrentCharFormat(fmt);
+  outEdit->insertPlainText(qs);
+  outEdit->setCurrentCharFormat(saved);
 
   auto appioDispatch = EPollDispatcher::def();
   inputQueue.safe_emplace_front(qs);

@@ -368,7 +368,7 @@
     <number>8</number>
    </attribute>
   </widget>
-  <widget class="QTerminalDock" name="gdbmiDock">
+  <widget class="QMIDock" name="gdbmiDock">
    <property name="windowTitle">
     <string>gdb/mi</string>
    </property>
@@ -496,6 +496,12 @@
    <class>QTerminalDock</class>
    <extends>QDockWidget</extends>
    <header>gui/QTerminalDock.h</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>QMIDock</class>
+   <extends>QDockWidget</extends>
+   <header>gui/QMIDock.h</header>
    <container>1</container>
   </customwidget>
  </customwidgets>

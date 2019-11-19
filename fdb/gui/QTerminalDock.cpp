@@ -78,13 +78,13 @@ QTerminalDock::QTerminalDock()
   QFont trmfont("Monospace", 7);
 
   auto clientWidget = new QWidget(this);
-  outEdit = new QPlainTextEdit(clientWidget);
+  outEdit = new QPlainTextEdit();
   outEdit->setReadOnly(true);
   outEdit->setFont(trmfont);
   outEdit->setMinimumHeight(32);
   outEdit->setCenterOnScroll(true);
 
-  inEdit = new QLineEdit(clientWidget);
+  inEdit = new QLineEdit();
   inEdit->setFont(trmfont);
   inEdit->setMaximumHeight(24);
   inEdit->setMinimumHeight(24);
@@ -110,6 +110,7 @@ QTerminalDock::QTerminalDock (QWidget *parent)
 
 QTerminalDock::~QTerminalDock ()
 {
+  Logger::debug2("Destroying a QTerminalDock: %s", this->objectName().toLatin1().data());
   destroyPty();
 }
 
@@ -123,16 +124,6 @@ const QString QTerminalDock::ptyname()
 struct winsize QTerminalDock::terminalDimensions ()
 {
   QLayout* lyt = this->widget()->layout();
-
-  for (int i=0; i < lyt->count(); i++) {
-    QWidget* editctl = lyt->itemAt(i)->widget();
-    if (!editctl) continue;
-    outEdit = dynamic_cast<QPlainTextEdit*>(editctl);
-    if (outEdit) break;
-  }
-  if (!outEdit) {
-    Throw(std::logic_error,"Expected to find a QPlainTextEdit inside this QTerminalWidget");
-  }
 
   auto chfmt = outEdit->currentCharFormat();
   auto fnt = chfmt.font();
@@ -189,6 +180,13 @@ void QTerminalDock::createPty()
   int r = ioctl(*_ptfd, TIOCSWINSZ, &win);
   assert_re(r==0, "Couldn't set window size on the pseudoterminal (%s)", strerror(errno));
   unlockpt(*_ptfd);
+
+  struct termios tmios;
+  r = tcgetattr(*_ptfd, &tmios);
+  assert_re(r != -1, "Couldn't get terminal settings on pty: %s", strerror(errno));
+  tmios.c_lflag &= ~(ECHO);
+  r = tcsetattr(*_ptfd, TCSANOW, &tmios);
+  assert_re(r != -1, "Couldn't set terminal settings on pty: %s", strerror(errno));
 
   auto appioDispatch = EPollDispatcher::def();
   using namespace std::placeholders;
@@ -259,7 +257,7 @@ EPollListener::ret_t QTerminalDock::onEPollIn (const struct epoll_event& eev) tr
 
       QCoreApplication::postEvent(this, tioev);
     } else {
-      Logger::debug("Returning with %d bytes in buffer: \n%s\n^%s", inbuf_idx, inbuf, text.data());
+      Logger::debug("Returning with %d bytes in buffer (loopcnt=%d): \n[[%s]]\n[[%s]]", inbuf_idx, loopcnt, inbuf, text.toLatin1().data());
       break;
     }
 
@@ -417,10 +415,14 @@ void QTerminalDock::onTerminalEvent (QTerminalIOEvent& event)
   // this signal will be emitted by the new QTerminalDock instead
   output(event);
   if (event.display) {
+
     outEdit->insertPlainText(event.text);
     if (freezeChk->checkState() == Qt::CheckState::Unchecked) {
       outEdit->ensureCursorVisible();
     }
+
   }
 }
+
+
 
