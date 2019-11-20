@@ -8,6 +8,10 @@
 
 class QMIDock;
 
+/**
+ * Represents one of GDB/MI's six asynchronous channels.
+ * Provides the required UI setup wiring and interaction for the dock's tabs and popup menus.
+ */
 struct OutputChannel
 {
   OutputChannel()
@@ -25,6 +29,15 @@ struct OutputChannel
 
 };
 
+
+/**
+ * Graphical dock for speaking to gdb/mi.
+ *
+ * Historically this object was a one-stop shop class for working with the gdb/mi pseudoterminal.
+ *
+ * Going forward, the pty guts and signals are going to move into GDBMI / PtyIO, while this object
+ * serves as a dock-based view/controller.
+ */
 class QMIDock : public QTerminalDock
 {
   QTabWidget*       tab;

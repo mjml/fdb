@@ -11,12 +11,10 @@
 #include <QSettings>
 #include <map>
 #include <util/co_work_queue.hpp>
+#include "MIController.h"
 
+class MIController;
 
-namespace Ui {
-class MainWindow;
-class SettingsDialog;
-}
 
 typedef boost::interprocess::message_queue mqueue;
 
@@ -37,11 +35,10 @@ public:
   void write_settings ();
 
 private:
-  Ui::MainWindow*      ui;
+  PMainWindow          ui;
   Ui::SettingsDialog*  settingsUi;
-
-  GDBProcess gdb;
-  TraceeProcess tracee;
+  GDBProcess           gdb;
+  TraceeProcess        tracee;
 
   enum ProgState {
     ProgramStart,
@@ -76,6 +73,7 @@ public slots:
   void parse_factorio_lines(QTerminalIOEvent& event);
 
   void parse_gdbmi_lines(QTerminalIOEvent& event);
+
 
 
 protected:

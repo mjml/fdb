@@ -28,6 +28,7 @@ FDBApp::FDBApp(QWidget *parent) :
   workq()
 {
   initialize_fdbsocket();
+  MIController::initialize(ui);
 
   ui->setupUi(this);
 
@@ -57,8 +58,8 @@ FDBApp::~FDBApp()
     gdbpid = 0;
     gState = NotRunning;
   }
-  delete ui;
-  ui = nullptr;
+  MIController::finalize();
+  ui.reset();
 }
 
 
