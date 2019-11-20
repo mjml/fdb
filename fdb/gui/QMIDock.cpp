@@ -1,7 +1,25 @@
 #include <QBoxLayout>
 #include <QTabWidget>
 #include <QTabBar>
+#include <QCheckBox>
 #include "QMIDock.h"
+
+OutputChannel::~OutputChannel()
+{
+  if (edit) {
+    delete edit;
+    edit = nullptr;
+  }
+  // the checkboxes are owned by the context menu widget
+}
+
+void OutputChannel::layoutTab(QTabWidget& tab, QString text) {
+  edit = new QPlainTextEdit();
+  edit->setFont(QFont("Monospace",7));
+  edit->setReadOnly(true);
+  tab.addTab(edit, text);
+}
+
 
 QMIDock::QMIDock()
   : QTerminalDock(),
@@ -14,18 +32,15 @@ QMIDock::QMIDock()
   QFont trmfont("Monospace", 7);
   tab->setFont(trmfont);
 
-#define DEFINE_TAB(type) \
-  type.edit = new QPlainTextEdit(); \
-  type.edit->setFont(trmfont); \
-  type.edit->setReadOnly(true); \
-  type.tabPosition = tab->addTab(type.edit, QLatin1String(#type))
+#define DEFINE_TAB(channel) \
+  channel.layoutTab(*tab,#channel)
 
-  //DEFINE_TAB(exec);
-  //DEFINE_TAB(status);
-  //DEFINE_TAB(notify);
-  //DEFINE_TAB(console);
-  //DEFINE_TAB(target);
-  //DEFINE_TAB(log);
+  DEFINE_TAB(exec);
+  DEFINE_TAB(status);
+  DEFINE_TAB(notify);
+  DEFINE_TAB(console);
+  DEFINE_TAB(target);
+  DEFINE_TAB(log);
 #undef DEFINE_TAB
 
   exec.fmt.setForeground(QBrush(Qt::darkRed));
@@ -35,13 +50,12 @@ QMIDock::QMIDock()
   target.fmt.setForeground(QBrush(Qt::darkGray));
   log.fmt.setForeground(QBrush(Qt::darkMagenta));
 
-  //createPopupWidget();
-  //tab->setContextMenuPolicy(Qt::CustomContextMenu);
-  //connect(tab, &QWidget::customContextMenuRequested, this, [&](const QPoint& pos){ visibilityPopup.move(pos.x()-5, pos.y()-5); visibilityPopup.show(); });
+  createPopupWidget();
+  tab->setContextMenuPolicy(Qt::CustomContextMenu);
+  connect(tab, &QWidget::customContextMenuRequested, this, [&](const QPoint& pos){ visibilityPopup.move(pos.x()-5, pos.y()-5); visibilityPopup.show(); });
 
-  //onCheckboxesUpdated(-1);
+  onCheckboxesUpdated(-1);
 
-  /*
   QWidget* clientWidget = this->widget();
   auto oldlyt = clientWidget->layout();
   oldlyt->removeWidget(outEdit);
@@ -53,70 +67,116 @@ QMIDock::QMIDock()
   auto lyt = new QVBoxLayout();
   lyt->addWidget(tab);
   lyt->addWidget(inEdit);
+  lyt->setMargin(1);
+  lyt->setSpacing(1);
   newClientWidget->setLayout(lyt);
 
   this->setWidget(newClientWidget);
 
   delete clientWidget;
-*/
 }
 
+
+void OutputChannel::layoutPopupMenu(QWidget &ctxmenu, QGridLayout &layout, QString name, QString tooltipText, int &counter)
+{
+  routeChk = new QCheckBox();
+  routeChk->setToolTip("Set to either:\n    no output (unchecked)\n    merged into main output (solid)\n    separate tab (checked)");
+  routeChk->setTristate(true);
+  timestampChk = new QCheckBox();
+  timestampChk->setToolTip("Append timestamp to specified channel output");
+  auto lbl = new QLabel(name);
+  lbl->setToolTip(tooltipText);
+  lbl->setFont(QFont("Monospace", 5));
+  layout.addWidget(lbl, counter, 0);
+  layout.addWidget(routeChk, counter, 1);
+  layout.addWidget(timestampChk, counter, 2);
+  counter++;
+}
+
+void OutputChannel::connectHandler(QMIDock* dock)
+{
+  QObject::connect(routeChk, &QCheckBox::stateChanged, dock, &QMIDock::onCheckboxesUpdated);
+}
 
 void QMIDock::createPopupWidget()
 {
   QWidget& widget = visibilityPopup;
   auto layout = new QGridLayout();
+  layout->setSpacing(0);
+  layout->setMargin(0);
   layout->setColumnMinimumWidth(0, 96);
-  int i = 0;
-  QLabel* lbl = nullptr;
 
-  QFont mini("Monospace", 6);
-  auto hdr = new QLabel("vis");
-  auto tslbl = new QLabel("tstamp");
-  hdr->setFont(mini);
-  tslbl->setFont(mini);
-  layout->addWidget(hdr,0,0,1,1);
-  layout->addWidget(tslbl,0,0,1,2);
+  QPushButton* close = new QPushButton();
+  layout->addWidget(close,0,2);
+  close->setText("⌧");
+  close->setDefault(true);
+  close->setMaximumSize(16,16);
+  QObject::connect(close, &QPushButton::pressed, [&]{ visibilityPopup.hide(); });
 
-#define DEFINE_ENTRY(x,tt,cnt)  \
-  x.routeChk = new QCheckBox(#x); \
-  x.routeChk->setToolTip(QLatin1String(tt "\nSets " #x " output to either:\ninvisible (unchecked)\nmerged (solid)\nseparate (checked)")); \
-  x.routeChk->setTristate(true); \
-  x.timestampChk = new QCheckBox(); \
-  lbl = new QLabel(#x); \
-  lbl->setFont(QFont("Monospace", 6)); \
-  layout->addWidget(lbl, cnt, 0); \
-  layout->addWidget(x.routeChk, cnt, 1);\
-  layout->addWidget(x.timestampChk, cnt++, 2)
+  QPalette hdrPalette;
+  hdrPalette.setColor(QPalette::ColorRole::Window,QColor::fromRgb(255,255,255));
+  auto routelbl = new QLabel("⛜");
+  auto tslbl = new QLabel("⏲");
+  auto namelbl = new QLabel("<u>Name</u>");
+  QFont mono("Monospace", 6);
+  QFont symbola("Symbola", 10);
+  namelbl->setPalette(hdrPalette);
+  routelbl->setPalette(hdrPalette);
+  tslbl->setBackgroundRole(QPalette::Window);
+  routelbl->setBackgroundRole(QPalette::Window);
+  tslbl->setBackgroundRole(QPalette::Window);
+  namelbl->setFont(mono);
+  routelbl->setFont(symbola);
+  tslbl->setFont(symbola);
+  layout->addWidget(namelbl,1,0);
+  layout->addWidget(routelbl,1,1);
+  layout->addWidget(tslbl,1,2);
 
-  DEFINE_ENTRY(exec,"exec output shows changes in the running state of the program",i);
+  int i = 2;
+
+#define DEFINE_POPUPMENU(x,tt,cnt)  \
+  x.layoutPopupMenu(widget, *layout, #x, tt, cnt)
+
+  DEFINE_POPUPMENU(exec,"shows changes in the running state of the program",i);
   exec.routeChk->setCheckState(Qt::PartiallyChecked);
-  DEFINE_ENTRY(status,"status output shows the ongoing progress of long operations",i);
+  DEFINE_POPUPMENU(status,"shows the ongoing progress of long operations",i);
   status.routeChk->setCheckState(Qt::PartiallyChecked);
-  DEFINE_ENTRY(notify,"notify output tracks the creation of gdb objects such as\nbreakpoints, watchpoints, threads, and so on",i);
+  DEFINE_POPUPMENU(notify,"tracks the creation of gdb objects such as\nbreakpoints, watchpoints, threads, and so on",i);
   notify.routeChk->setCheckState(Qt::PartiallyChecked);
-  DEFINE_ENTRY(console,"console output is human-readable output in response to a CLI command",i);
+  DEFINE_POPUPMENU(console,"human-readable output in response to a CLI command",i);
   console.routeChk->setCheckState(Qt::Checked);
-  DEFINE_ENTRY(target,"target output is produced by the tracee program itself",i);
-  target.routeChk->setCheckState(Qt::Checked);
-  DEFINE_ENTRY(log,"log output comes from gdb's internals such as errors and warnings",i);
+  DEFINE_POPUPMENU(target,"produced by the tracee program itself",i);
+  target.routeChk->setCheckState(Qt::Unchecked);
+  DEFINE_POPUPMENU(log,"comes from gdb's internals such as errors and warnings",i);
   log.routeChk->setCheckState(Qt::Checked);
-#undef DEFINE_ENTRY
-
-#define CONNECT_ROUTE(x) \
+#undef DEFINE_POPUPMENU
+// The following must be in a second stage or the setCheckState calls above will trigger signals before later.
+#define CONNECT_CHANNEL(x) \
   connect(x.routeChk, &QCheckBox::stateChanged, \
           this, &QMIDock::onCheckboxesUpdated)
 
-  //CONNECT_ROUTE(exec);
-  //CONNECT_ROUTE(status);
-  //CONNECT_ROUTE(notify);
-  //CONNECT_ROUTE(console);
-  //CONNECT_ROUTE(target);
-  //CONNECT_ROUTE(log);
-
+  CONNECT_CHANNEL(exec);
+  CONNECT_CHANNEL(status);
+  CONNECT_CHANNEL(notify);
+  CONNECT_CHANNEL(console);
+  CONNECT_CHANNEL(target);
+  CONNECT_CHANNEL(log);
+#undef CONNECT_CHANNEL
 
   widget.setLayout(layout);
+  widget.setParent(tab);
+  widget.setVisible(false);
+  widget.setAutoFillBackground(true);
 
+}
+
+void QMIDock::mousePressEvent(QMouseEvent *event)
+{
+  QWidget* widgetAt = this->childAt(event->x(), event->y());
+  if (widgetAt != &visibilityPopup && visibilityPopup.isVisible()) {
+    visibilityPopup.setVisible(false);
+  }
+  QTerminalDock::mousePressEvent(event);
 }
 
 QMIDock::QMIDock(QWidget* parent)
@@ -127,89 +187,91 @@ QMIDock::QMIDock(QWidget* parent)
 
 QMIDock::~QMIDock()
 {
-  tab->clear();
+  if (tab) {
+    tab->clear();
+  }
 
-#define DEL_ENTRY(x) \
-  //delete x.edit
-
-  DEL_ENTRY(exec);
-  DEL_ENTRY(status);
-  DEL_ENTRY(notify);
-  DEL_ENTRY(console);
-  DEL_ENTRY(target);
-  DEL_ENTRY(log);
 }
 
-void QMIDock::onContextMenuEvent(QContextMenuEvent *event)
+void QMIDock::onContextMenuEvent (QContextMenuEvent *event)
 {
   visibilityPopup.move(event->x()-2, event->y()-2);
   visibilityPopup.show();
 }
 
-void QMIDock::onTerminalEvent(QTerminalIOEvent &event)
+void OutputChannel::handleEvent(QTerminalIOEvent& event, QPlainTextEdit &mainEdit, QMIDock* dock, void (QMIDock::*sigfunc)(const QString &))
+{
+  QPlainTextEdit* editctl;
+  Qt::CheckState chkstate = routeChk->checkState();
+  if (chkstate == Qt::Checked) {
+    editctl = edit;
+  } else if (chkstate == Qt::PartiallyChecked) {
+    editctl = &mainEdit;
+  }
+  if (editctl) {
+    QTextCharFormat saved(editctl->currentCharFormat());
+    editctl->setCurrentCharFormat(fmt);
+    if (timestampChk->checkState() == Qt::Checked) {
+       struct timespec ts;
+       char timestamp[1024];
+       clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
+	   snprintf(timestamp, 1023, "%ld.%06ld ", ts.tv_sec, ts.tv_nsec/1000);
+       editctl->insertPlainText(QLatin1String(timestamp));
+    }
+    editctl->insertPlainText(event.text);
+    editctl->setCurrentCharFormat(saved);
+  }
+  (dock->*sigfunc)(event.text);
+}
+
+void QMIDock::onTerminalEvent (QTerminalIOEvent &event)
 {
   const QString& text = event.text;
   QPlainTextEdit* edit = nullptr;
-#define HANDLE_TEXT(type) \
-  if (type.routeChk->checkState() == Qt::Checked) { \
-    edit = type.edit; \
-  } else if (type.routeChk->checkState() == Qt::PartiallyChecked) { \
-    edit = outEdit; \
-  } \
-  if (edit) { \
-    QTextCharFormat saved(edit->currentCharFormat()); \
-    edit->setCurrentCharFormat(type.fmt); \
-    if (type.timestampChk->checkState() == Qt::Checked) { \
-       struct timespec ts; \
-       char timestamp[1024]; \
-       clock_gettime(CLOCK_MONOTONIC_COARSE, &ts); \
-	   snprintf(timestamp, 1023, "%ld.%06ld ", ts.tv_sec, ts.tv_nsec/1000);\
-       edit->insertPlainText(QLatin1String(timestamp)); \
-    } \
-    edit->insertPlainText(event.text); \
-    edit->setCurrentCharFormat(saved); \
-  } \
-  type##_output(event.text)
+
+#define HANDLE_TEXT(channel) \
+  channel.handleEvent(event,*outEdit,this,&QMIDock::channel##_output)
 
   if (text.startsWith('*')) {
-    //HANDLE_TEXT(exec);
+    HANDLE_TEXT(exec);
   } else if (text.startsWith("+")) {
-    //HANDLE_TEXT(status);
+    HANDLE_TEXT(status);
   } else if (text.startsWith('=')) {
-    //HANDLE_TEXT(notify);
+    HANDLE_TEXT(notify);
   } else if (text.startsWith('~')) {
-    //HANDLE_TEXT(console);
+    HANDLE_TEXT(console);
   } else if (text.startsWith('@')) {
-    //HANDLE_TEXT(target);
+    HANDLE_TEXT(target);
   } else if (text.startsWith('&')) {
-    //HANDLE_TEXT(log);
+    HANDLE_TEXT(log);
   } else {
     QTerminalDock::onTerminalEvent(event);
   }
+#undef HANDLE_TEXT
 
 }
 
-void QMIDock::exec_output(const QString &text)
+void QMIDock::exec_output (const QString &text)
 {
 
 }
 
-void QMIDock::status_output(const QString &text)
+void QMIDock::status_output (const QString &text)
 {
 
 }
 
-void QMIDock::notify_output(const QString &text)
+void QMIDock::notify_output (const QString &text)
 {
 
 }
 
-void QMIDock::console_output(const QString &text)
+void QMIDock::console_output (const QString &text)
 {
 
 }
 
-void QMIDock::target_output(const QString &text)
+void QMIDock::target_output (const QString &text)
 {
 
 }

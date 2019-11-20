@@ -1,6 +1,6 @@
 #include <sys/ioctl.h>
 #include <sys/epoll.h>
-#include <stdlib.h>
+#include <cstdlib>
 #include <fcntl.h>
 #include <unistd.h>
 #include <pty.h>
@@ -21,7 +21,7 @@
 QEvent::Type QTerminalDock::ioEventType;
 
 QTerminalDock::QTerminalDock()
-  : QOptionsDock (), ioview(OUT_ONLY),
+  : ioview(OUT_ONLY),
     lszbtn(nullptr), lszedit(nullptr),
     freezeChk(nullptr),
     inEdit(nullptr), outEdit(nullptr),
@@ -29,7 +29,9 @@ QTerminalDock::QTerminalDock()
     _iothread(nullptr),
     outbuf_idx(0),
     outbuf_siz(0),
-    inbuf_idx(0)
+    outbuf{},
+    inbuf_idx(0),
+    inbuf{}
 {
   QFont mini(QStringLiteral("Monospace"),5);
 
@@ -74,7 +76,8 @@ QTerminalDock::QTerminalDock()
 
   // client area
   auto lyt = new QVBoxLayout();
-  lyt->setMargin(4);
+  lyt->setMargin(1);
+  lyt->setSpacing(1);
   QFont trmfont("Monospace", 7);
 
   auto clientWidget = new QWidget(this);
@@ -96,7 +99,8 @@ QTerminalDock::QTerminalDock()
   setWidget(clientWidget);
   clientWidget->show();
 
-  connect(inEdit, &QLineEdit::returnPressed, this, &QTerminalDock::returnPressed);
+  QObject::connect (inEdit,    &QLineEdit::returnPressed,
+                    this,      &QTerminalDock::returnPressed);
 
 }
 

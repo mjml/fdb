@@ -31,6 +31,10 @@ FDBApp::FDBApp(QWidget *parent) :
 
   ui->setupUi(this);
 
+  ui->gdbDock->titleBar->label->setToolTip("Human-friendly interface to the debugger");
+  ui->factorioDock->titleBar->label->setToolTip("Output of target program");
+  ui->gdbmiDock->titleBar->label->setToolTip("CLI output showing interaction between debugger and frontend");
+
   read_settings();
 
   initialize_actions();

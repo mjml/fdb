@@ -8,7 +8,6 @@ QOptionsTitleBar::QOptionsTitleBar ()
 {
   QFont heading = QFont(QStringLiteral("Monospace"),6);
 
-
   label = new QLabel();
   label->setText("test");
   label->setTextFormat(Qt::PlainText);
@@ -16,7 +15,10 @@ QOptionsTitleBar::QOptionsTitleBar ()
   label->setStyleSheet("color:black");
 
   QHBoxLayout* lyt = new QHBoxLayout();
+  lyt->setMargin(1);
+  lyt->setSpacing(1);
   setLayout(lyt);
+  lyt->addSpacing(6);
   lyt->addWidget(label);
 }
 

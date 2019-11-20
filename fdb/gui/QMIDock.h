@@ -3,18 +3,26 @@
 
 #include <QTabWidget>
 #include <QMenu>
+#include <QGridLayout>
 #include "gui/QTerminalDock.h"
+
+class QMIDock;
 
 struct OutputChannel
 {
   OutputChannel()
-    : edit(nullptr), routeChk(nullptr), timestampChk(nullptr), fmt(), tabPosition(-1) {}
-  ~OutputChannel() = default;
+    : edit(nullptr), routeChk(nullptr), timestampChk(nullptr), fmt() {}
+  ~OutputChannel();
   QPlainTextEdit  *edit;
   QCheckBox       *routeChk;
   QCheckBox       *timestampChk;
   QTextCharFormat fmt;
-  int             tabPosition;
+
+  void layoutTab(QTabWidget& tab, QString text);
+  void layoutPopupMenu(QWidget& ctxmenu, QGridLayout& layout, QString name, QString tooltipText, int& counter);
+  void connectHandler(QMIDock* dock);
+  void handleEvent(QTerminalIOEvent& ioevent, QPlainTextEdit& mainEdit, QMIDock* dock, void (QMIDock::*sigfunc)(const QString&));
+
 };
 
 class QMIDock : public QTerminalDock
@@ -56,6 +64,8 @@ signals:
 
 protected:
   void createPopupWidget();
+
+  virtual void mousePressEvent(QMouseEvent* event) override;
 
 };
 
