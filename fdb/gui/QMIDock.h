@@ -25,7 +25,7 @@ struct OutputChannel
   void layoutTab(QTabWidget& tab, QString text);
   void layoutPopupMenu(QWidget& ctxmenu, QGridLayout& layout, QString name, QString tooltipText, int& counter);
   void connectHandler(QMIDock* dock);
-  void handleEvent(QTerminalIOEvent& ioevent, QPlainTextEdit& mainEdit, QMIDock* dock, void (QMIDock::*sigfunc)(const QString&));
+  void handleEvent(QTextEvent& ioevent, QPlainTextEdit& mainEdit, QMIDock* dock, void (QMIDock::*sigfunc)(const QString&));
 
 };
 
@@ -40,6 +40,8 @@ struct OutputChannel
  */
 class QMIDock : public QTerminalDock
 {
+  Q_OBJECT
+
   QTabWidget*       tab;
 
   OutputChannel   exec;
@@ -58,22 +60,22 @@ class QMIDock : public QTerminalDock
 public:
   QMIDock();
   QMIDock(QWidget* parent);
-  ~QMIDock();
+  ~QMIDock() override;
 
 public slots:
   void onContextMenuEvent(QContextMenuEvent* event);
 
-  void onTerminalEvent(QTerminalIOEvent &qs) override;
-
   void onCheckboxesUpdated (int state);
 
+  void execText(const QTextEvent& text);
+  void statusText(const QTextEvent& text);
+  void notifyText(const QTextEvent& text);
+  void consoleText(const QTextEvent& text);
+  void targetText(const QTextEvent& text);
+  void logText(const QTextEvent& text);
+
 signals:
-  void exec_output(const QString& text);
-  void status_output(const QString& text);
-  void notify_output(const QString& text);
-  void console_output(const QString& text);
-  void target_output(const QString& text);
-  void log_output(const QString& text);
+
 
 protected:
   void createPopupWidget();

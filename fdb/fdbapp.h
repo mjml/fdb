@@ -11,9 +11,9 @@
 #include <QSettings>
 #include <map>
 #include <util/co_work_queue.hpp>
-#include "MIController.h"
+#include "GdbMI.h"
 
-class MIController;
+class GdbMI;
 
 
 typedef boost::interprocess::message_queue mqueue;
@@ -37,8 +37,14 @@ public:
 private:
   PMainWindow          ui;
   Ui::SettingsDialog*  settingsUi;
+
   GDBProcess           gdb;
+  PAsyncPty            gdbpty;
+  PGdbMI               gdbmi;
+
   TraceeProcess        tracee;
+  PAsyncPty            traceepty;
+
 
   enum ProgState {
     ProgramStart,
@@ -49,16 +55,16 @@ private:
 
   EPollListener::pfd_t fdbsocket;
 
-  typedef co_work_queue<QTerminalIOEvent*> CoworkQueue;
+  typedef co_work_queue<QTextEvent*> CoworkQueue;
   typedef CoworkQueue::coro_t::pull_type influent_t;
   typedef CoworkQueue::coro_t::push_type effluent_t;
 
   CoworkQueue workq;
 
 public slots:
-  void start_factorio();
+  void start_tracee();
 
-  void kill_factorio();
+  void kill_tracee();
 
   void restart_gdb();
 
@@ -68,16 +74,16 @@ public slots:
 
   void attach_gdbmi();
 
-  void parse_gdb_lines(QTerminalIOEvent& event);
+  void parse_gdb_lines(QTextEvent& event);
 
-  void parse_factorio_lines(QTerminalIOEvent& event);
+  void parse_tracee_lines(QTextEvent& event);
 
-  void parse_gdbmi_lines(QTerminalIOEvent& event);
+  void parse_gdbmi_lines(QTextEvent& event);
 
 
 
 protected:
-  void on_factorio_finished(int exitCode, QProcess::ExitStatus exitStatus);
+  void on_tracee_finished(int exitCode, QProcess::ExitStatus exitStatus);
   void on_gdb_finished(int exitCode, QProcess::ExitStatus exitStatus);
   EPollListener::ret_t on_fdbsocket_event (const epoll_event& eev);
   EPollListener::ret_t on_fdbstubsocket_event (const epoll_event& eev);

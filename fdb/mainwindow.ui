@@ -369,9 +369,9 @@
     <number>8</number>
    </attribute>
   </widget>
-  <widget class="QTerminalDock" name="factorioDock">
+  <widget class="QTerminalDock" name="traceeDock">
    <property name="windowTitle">
-    <string>factorio</string>
+    <string>target</string>
    </property>
    <attribute name="dockWidgetArea">
     <number>8</number>
@@ -568,7 +568,7 @@
   <zorder>modDock</zorder>
   <zorder>filesDock</zorder>
   <zorder>gdbDock</zorder>
-  <zorder>factorioDock</zorder>
+  <zorder>traceeDock</zorder>
   <zorder>gdbmiDock</zorder>
   <zorder>threadDock</zorder>
  </widget>
@@ -594,7 +594,7 @@
   <connection>
    <sender>actionShow_Factorio_stdout</sender>
    <signal>triggered(bool)</signal>
-   <receiver>factorioDock</receiver>
+   <receiver>traceeDock</receiver>
    <slot>setVisible(bool)</slot>
    <hints>
     <hint type="sourcelabel">

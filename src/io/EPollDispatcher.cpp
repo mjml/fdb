@@ -115,7 +115,7 @@ void EPollDispatcher::run ()
       auto bkt = listeners.bucket(fd);
       for (auto it = listeners.begin(bkt); it != listeners.end(bkt); it++) {
         const EPollListener* listener = it->second;
-        if (eev.events & listener->events) {
+        if ((eev.events & listener->events) && listener->handler) {
           auto p = listener->handler(eev);
           handled = true;  // note difference between handled and p.handled
           if (p.add|| p.rem) {

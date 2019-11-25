@@ -28,17 +28,23 @@ FDBApp::FDBApp(QWidget *parent) :
   workq()
 {
   initialize_fdbsocket();
-  MIController::initialize(ui);
+  GdbMI::initialize(ui);
 
   ui->setupUi(this);
 
   ui->gdbDock->titleBar->label->setToolTip("Human-friendly interface to the debugger");
-  ui->factorioDock->titleBar->label->setToolTip("Output of target program");
+  ui->traceeDock->titleBar->label->setToolTip("Output of target program");
   ui->gdbmiDock->titleBar->label->setToolTip("CLI output showing interaction between debugger and frontend");
 
   read_settings();
 
+  gdbmi = std::make_shared<GdbMI>(ui);
+  gdbpty = std::make_shared<AsyncPty>("gdb");
+  traceepty = std::make_shared<AsyncPty>("tracee");
+
   initialize_actions();
+
+  //restart_gdb();
 
 }
 
@@ -58,9 +64,47 @@ FDBApp::~FDBApp()
     gdbpid = 0;
     gState = NotRunning;
   }
-  MIController::finalize();
+  GdbMI::finalize();
   ui.reset();
 }
+
+
+/**
+ * Note that this wiring does *not* use shared_pointers, but rather their inner targets.
+ * So, if you change any related std::shared_ptr objects, you need to call the following!
+ */
+void FDBApp::initialize_actions()
+{
+#define CNCT_ACTION(a,f) \
+  connect(a, &QAction::triggered,  this,   &f )
+
+  connect(ui->actionRestart_GDB, &QAction::triggered, this, &FDBApp::restart_gdb);
+  connect(ui->actionFactorioMode, &QAction::triggered, this, &FDBApp::start_tracee);
+
+  connect(ui->gdbDock,  &QTerminalDock::input,                 gdbpty.get(), &AsyncPty::input);
+  connect(ui->gdbDock, &QTerminalDock::terminal_resize,        gdbpty.get(), &AsyncPty::setTerminalDimensions);
+  connect(gdbpty.get(), &AsyncPty::output,                     ui->gdbDock, &QTerminalDock::output);
+  connect(gdbpty.get(), &AsyncPty::needsTerminalDimensions,    ui->gdbDock, &QTerminalDock::provideTerminalDimensions);
+
+  connect(ui->traceeDock,  &QTerminalDock::input,              traceepty.get(), &AsyncPty::input);
+  connect(ui->traceeDock, &QTerminalDock::terminal_resize,     traceepty.get(), &AsyncPty::setTerminalDimensions);
+  connect(traceepty.get(), &AsyncPty::output,                  ui->traceeDock, &QTerminalDock::output);
+  connect(traceepty.get(), &AsyncPty::needsTerminalDimensions, ui->traceeDock, &QTerminalDock::provideTerminalDimensions);
+
+  connect(ui->gdbmiDock, &QMIDock::input, gdbmi.get(), &GdbMI::input);
+  connect(gdbmi.get(), &GdbMI::output,      ui->gdbmiDock, &QMIDock::output);
+  connect(gdbmi.get(), &GdbMI::execText,    ui->gdbmiDock, &QMIDock::execText);
+  connect(gdbmi.get(), &GdbMI::statusText,  ui->gdbmiDock, &QMIDock::statusText);
+  connect(gdbmi.get(), &GdbMI::notifyText,  ui->gdbmiDock, &QMIDock::notifyText);
+  connect(gdbmi.get(), &GdbMI::consoleText, ui->gdbmiDock, &QMIDock::consoleText);
+  connect(gdbmi.get(), &GdbMI::targetText,  ui->gdbmiDock, &QMIDock::targetText);
+  connect(gdbmi.get(), &GdbMI::logText,     ui->gdbmiDock, &QMIDock::logText);
+
+  connect(&tracee, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this, &FDBApp::on_tracee_finished);
+  connect(&gdb, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this, &FDBApp::on_gdb_finished);
+
+}
+
 
 
 void FDBApp::initialize_fdbsocket()
@@ -135,7 +179,7 @@ void FDBApp::write_settings ()
 }
 
 
-void FDBApp::start_factorio()
+void FDBApp::start_tracee()
 {
   if (tracee.state() == QProcess::Running) {
     Logger::warning("Can't start factorio, it is already running!");
@@ -144,12 +188,12 @@ void FDBApp::start_factorio()
 
   ui->actionFactorioMode->setEnabled(false);
   ui->actionFactorioMode->setText("Factorio is running...");
-  ui->factorioDock->createPty();
+  traceepty->createPty();
 
-  Logger::print("Starting Factorio with pseudoterminal on %s", ui->factorioDock->ptyname().toLatin1().data());
+  Logger::print("Starting Factorio with pseudoterminal on %s", traceepty->ptyname().toLatin1().data());
 
-  tracee.setStandardOutputFile(ui->factorioDock->ptyname().toLatin1().data());
-  tracee.setStandardErrorFile(ui->factorioDock->ptyname().toLatin1().data());
+  tracee.setStandardOutputFile(traceepty->ptyname().toLatin1().data());
+  tracee.setStandardErrorFile(traceepty->ptyname().toLatin1().data());
 
   tracee.setWorkingDirectory("/home/joya");
   tracee.start("/home/joya/games/factorio/bin/x64/factorio");
@@ -157,10 +201,10 @@ void FDBApp::start_factorio()
 }
 
 
-void FDBApp::kill_factorio()
+void FDBApp::kill_tracee()
 {
   tracee.close();
-  ui->factorioDock->destroyPty();
+  traceepty->destroyPty();
 }
 
 
@@ -178,14 +222,14 @@ void FDBApp::restart_gdb()
     return;
   }
 
-  ui->gdbDock->accept_suffixes = { QString::fromLatin1("(gdb) ") };
-  ui->gdbDock->createPty();
+  gdbpty->accept_prefixes = { QString::fromLatin1("(gdb) ") };
+  gdbpty->createPty();
 
-  Logger::print("Starting gdb with pseudoterminal on %s", ui->gdbDock->ptyname().toLatin1().data());
+  Logger::print("Starting gdb with pseudoterminal on %s", gdbpty->ptyname().toLatin1().data());
 
-  gdb.setStandardInputFile(ui->gdbDock->ptyname().toLatin1());
-  gdb.setStandardOutputFile(ui->gdbDock->ptyname().toLatin1());
-  gdb.setStandardErrorFile(ui->gdbDock->ptyname().toLatin1());
+  gdb.setStandardInputFile(gdbpty->ptyname().toLatin1());
+  gdb.setStandardOutputFile(gdbpty->ptyname().toLatin1());
+  gdb.setStandardErrorFile(gdbpty->ptyname().toLatin1());
 
   QDir cwd;
   gdb.setWorkingDirectory(cwd.absolutePath());
@@ -200,7 +244,7 @@ void FDBApp::kill_gdb()
   Logger::info("Terminating gdb process...");
   // TODO: this functionality will be moved into destroyPty()
   //ui->gdbDock->stopIOThread();
-  ui->gdbDock->destroyPty();
+  gdbpty->destroyPty();
   gdb.kill();
   gdb.waitForFinished(-1);
 }
@@ -209,7 +253,7 @@ void FDBApp::kill_gdb()
 void FDBApp::attach_to_factorio()
 {
   effluent_t worker([&] (influent_t& src) {
-    ui->gdbmiDock->write("-target-attach %d", tracee.pid());
+    gdbmi->write("-target-attach %d", tracee.pid());
     do { src(); } while (!src.get()->text.contains("^done"));
 
     // Here we try to dlopen() the stub.
@@ -219,7 +263,7 @@ void FDBApp::attach_to_factorio()
     int retries = 0;
     int pos = 0;
     do {
-      ui->gdbmiDock->write("100-data-evaluate-expression \"(long)dlopen(\\\x22%s%s\\\x22,2)\"", QDir::currentPath().toLatin1().data(), "/fdbstub/builds/debug/libfdbstub.so.1.0.0");
+      gdbmi->write("100-data-evaluate-expression \"(long)dlopen(\\\x22%s%s\\\x22,2)\"", QDir::currentPath().toLatin1().data(), "/fdbstub/builds/debug/libfdbstub.so.1.0.0");
       do { src(); } while (!src.get()->text.startsWith("100^done"));
       QRegExp retvalue_regex(QLatin1String("value=\"(\\d+)\""));
       pos = retvalue_regex.indexIn(src.get()->text, 8);
@@ -231,7 +275,7 @@ void FDBApp::attach_to_factorio()
         if (dlhandle == 0) {
           Logger::error("libfdbstub.so did not load properly%s", ++retries < max_retries ? ", retrying in a higher stack frame." : "");
           if (retries < max_retries) {
-            ui->gdbmiDock->write("-exec-finish");
+            gdbmi->write("-exec-finish");
             do { src(); } while (!src.get()-> text.startsWith("*stopped"));
           } else {
             Logger::error("Bailing after %d attempts.", max_retries);
@@ -248,23 +292,23 @@ void FDBApp::attach_to_factorio()
       }
     } while (retries < max_retries);
 
-    ui->gdbmiDock->write("-file-symbol-file fdbstub/builds/debug/libfdbstub.so.1.0.0");
+    gdbmi->write("-file-symbol-file fdbstub/builds/debug/libfdbstub.so.1.0.0");
     do { src(); } while (!src.get()->text.contains("^done"));
 
-    ui->gdbmiDock->write("101-data-evaluate-expression stub_init()");
+    gdbmi->write("101-data-evaluate-expression stub_init()");
     do { src(); } while (!src.get()->text.startsWith("101^done"));
 
-    ui->gdbmiDock->write("-file-symbol-file /home/joya/games/factorio/bin/x64/factorio");
+    gdbmi->write("-file-symbol-file /home/joya/games/factorio/bin/x64/factorio");
     do { src(); } while (!src.get()->text.contains("^done"));
 
-    ui->gdbmiDock->write("-break-insert --function lua_newstate");
+    gdbmi->write("-break-insert --function lua_newstate");
     do { src(); } while (!src.get()->text.startsWith("^done"));
 
-    ui->gdbmiDock->write("-exec-continue --all");
+    gdbmi->write("-exec-continue --all");
     do { src(); } while (!src.get()->text.startsWith("^running"));
 
     do { src(); } while (!src.get()->text.contains("breakpoint-hit"));
-    ui->gdbmiDock->write("-data-evaluate-expression $rdi");
+    gdbmi->write("-data-evaluate-expression $rdi");
 
     do { src(); } while (!src.get()->text.contains("^done,value="));
     QRegExp luaState_regexp(QLatin1String("value=\"(\\d+)\""));
@@ -285,18 +329,18 @@ void FDBApp::attach_to_factorio()
 
     // TODO: tidy up this section and review the I/O chain. The work queue could use further enhancements!
 
-    ui->gdbmiDock->write("-break-delete 1");
+    gdbmi->write("-break-delete 1");
     do { src(); } while (!src.get()->text.startsWith("^done"));
 
     // maybe set another breakpoint here for very much later, or perhaps upon returning to some function higher up the call stack
 
     //ui->gdbmiDock->write("102-data-evaluate-expression register_lua_state(%d)", pState);
 
-    ui->gdbmiDock->write("-exec-continue --all");
+    gdbmi->write("-exec-continue --all");
     do { src(); } while (!src.get()->text.startsWith("^running"));
 
   });
-  QTerminalIOEvent initial;
+  QTextEvent initial(QTextEvent::Noop);
   worker(&initial);
   workq.push_worker(std::move(worker));
 }
@@ -313,26 +357,26 @@ void FDBApp::attach_gdbmi()
     return;
   }
 
-  ui->gdbmiDock->createPty();
+  gdbmi->createPty();
 
-  auto ba = ui->gdbmiDock->ptyname().toLatin1();
+  auto ba = gdbmi->ptyname().toLatin1();
   char* name = ba.data();
 
   Logger::print("Creating gdb/mi terminal on %s", name);
-  ui->gdbmiDock->accept_suffixes = { QString::fromLatin1("(gdb) ") };
+  gdbmi->accept_prefixes = { QString::fromLatin1("(gdb) ") };
 
   effluent_t worker([&] (influent_t& src){
-    ui->gdbDock->write("new-ui mi2 %s", name);
+    gdbmi->write("new-ui mi2 %s", name);
     src();
-    QTerminalIOEvent* ptEvent = src.get();
+    QTextEvent* ptEvent = src.get();
   });
-  QTerminalIOEvent initial;
+  QTextEvent initial(QTextEvent::Type::Noop);
   worker(&initial);
   workq.push_worker(std::move(worker));
 }
 
 
-void FDBApp::parse_gdb_lines(QTerminalIOEvent& event)
+void FDBApp::parse_gdb_lines(QTextEvent& event)
 {
   if (!gdbpid) {
     // HACK: it's a bit hacky to grab/store this here, but before these events, we aren't assured of a gdb process pid
@@ -350,7 +394,7 @@ void FDBApp::parse_gdb_lines(QTerminalIOEvent& event)
 }
 
 
-void FDBApp::parse_factorio_lines(QTerminalIOEvent& event)
+void FDBApp::parse_tracee_lines(QTextEvent& event)
 {
   bool combinedInitialized = (gState == Initialized) && (fState == Initialized);
   if (fState != Initialized && event.text.contains("Factorio")) {
@@ -362,20 +406,20 @@ void FDBApp::parse_factorio_lines(QTerminalIOEvent& event)
 }
 
 
-void FDBApp::parse_gdbmi_lines(QTerminalIOEvent& event)
+void FDBApp::parse_gdbmi_lines(QTextEvent& event)
 {
   workq.push_input(&event);
 }
 
 
 
-void FDBApp::on_factorio_finished (int exitCode, QProcess::ExitStatus exitStatus)
+void FDBApp::on_tracee_finished (int exitCode, QProcess::ExitStatus exitStatus)
 {
   fState = NotRunning;
 
   if (ui) {
-      ui->actionFactorioMode->setEnabled(true);
-      ui->actionFactorioMode->setText("Run Factorio");
+    ui->actionFactorioMode->setEnabled(true);
+    ui->actionFactorioMode->setText("Run Factorio");
   }
 }
 

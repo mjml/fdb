@@ -30,23 +30,23 @@ QMAKE_CXXFLAGS += -std=c++17 -Wno-format-security -O0
 
 SOURCES += \
         ../src/Inject.cpp \
-        ../src/MIController.cpp \
         ../src/io/EPollDispatcher.cpp \
         ../src/io/autoclosing_fd.cpp \
         ../src/util/log.cpp \
+        GdbMI.cpp \
         TraceeProcess.cpp \
         fdbapp.cpp \
-        fdbapp_actions.cpp \
         gui/QMIDock.cpp \
         gui/QOptionsDock.cpp \
         gui/QTerminalDock.cpp \
-        gui/QTerminalIOEvent.cpp \
+        io/AsyncPty.cpp \
         main.cpp \
-        util/GDBProcess.cpp
+        util/GDBProcess.cpp \
+        util/QTextEvent.cpp
 
 HEADERS += \
+        ../src/GdbMI.h \
         ../src/Inject.hpp \
-        ../src/MIController.h \
         ../src/io/EPollDispatcher.h \
         ../src/io/autoclosing_fd.h \
         ../src/ipc/mqueue.hpp \
@@ -56,14 +56,16 @@ HEADERS += \
         ../src/util/log.hpp \
         ../src/util/safe_deque.hpp \
         ../src/util/text_response.hpp \
+        GdbMI.h \
         TraceeProcess.h \
         fdbapp.h \
         gui/QMIDock.h \
         gui/QOptionsDock.h \
         gui/QTerminalDock.h \
-        gui/QTerminalIOEvent.h \
         gui/common.h \
-        util/GDBProcess.h
+        io/AsyncPty.h \
+        util/GDBProcess.h \
+        util/QTextEvent.h
 
 LIBS += -lutil -lboost_coroutine -lboost_context
 
@@ -94,4 +96,5 @@ RESOURCES += \
     fdbresources.qrc
 
 DISTFILES += \
+    gdbmi.y \
     resources/icons/gdb-button.svg

@@ -29,7 +29,7 @@ int main (int argc, char *argv[])
   EPollDispatcher::initialize();
 
   QApplication* a = new QApplication(argc, argv);
-  QTerminalDock::registerEventTypes();
+  QTextEvent::registerEventType();
 
   FDBApp* w = new FDBApp;
   w->show();

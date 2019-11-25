@@ -190,7 +190,6 @@ QMIDock::~QMIDock()
   if (tab) {
     tab->clear();
   }
-
 }
 
 void QMIDock::onContextMenuEvent (QContextMenuEvent *event)
@@ -199,7 +198,7 @@ void QMIDock::onContextMenuEvent (QContextMenuEvent *event)
   visibilityPopup.show();
 }
 
-void OutputChannel::handleEvent(QTerminalIOEvent& event, QPlainTextEdit &mainEdit, QMIDock* dock, void (QMIDock::*sigfunc)(const QString &))
+void OutputChannel::handleEvent(QTextEvent& event, QPlainTextEdit &mainEdit, QMIDock* dock, void (QMIDock::*sigfunc)(const QString &))
 {
   QPlainTextEdit* editctl;
   Qt::CheckState chkstate = routeChk->checkState();
@@ -224,63 +223,36 @@ void OutputChannel::handleEvent(QTerminalIOEvent& event, QPlainTextEdit &mainEdi
   (dock->*sigfunc)(event.text);
 }
 
-void QMIDock::onTerminalEvent (QTerminalIOEvent &event)
-{
-  const QString& text = event.text;
-  QPlainTextEdit* edit = nullptr;
 
-#define HANDLE_TEXT(channel) \
-  channel.handleEvent(event,*outEdit,this,&QMIDock::channel##_output)
-
-  if (text.startsWith('*')) {
-    HANDLE_TEXT(exec);
-  } else if (text.startsWith("+")) {
-    HANDLE_TEXT(status);
-  } else if (text.startsWith('=')) {
-    HANDLE_TEXT(notify);
-  } else if (text.startsWith('~')) {
-    HANDLE_TEXT(console);
-  } else if (text.startsWith('@')) {
-    HANDLE_TEXT(target);
-  } else if (text.startsWith('&')) {
-    HANDLE_TEXT(log);
-  } else {
-    QTerminalDock::onTerminalEvent(event);
-  }
-#undef HANDLE_TEXT
-
-}
-
-void QMIDock::exec_output (const QString &text)
+void QMIDock::execText (const QTextEvent &text)
 {
 
 }
 
-void QMIDock::status_output (const QString &text)
+void QMIDock::statusText (const QTextEvent &text)
 {
 
 }
 
-void QMIDock::notify_output (const QString &text)
+void QMIDock::notifyText (const QTextEvent &text)
 {
 
 }
 
-void QMIDock::console_output (const QString &text)
+void QMIDock::consoleText (const QTextEvent &text)
 {
 
 }
 
-void QMIDock::target_output (const QString &text)
+void QMIDock::targetText (const QTextEvent &text)
 {
 
 }
 
-void QMIDock::log_output(const QString &text)
+void QMIDock::logText(const QTextEvent &text)
 {
 
 }
-
 
 
 void QMIDock::onCheckboxesUpdated (int state)
