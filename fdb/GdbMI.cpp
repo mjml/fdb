@@ -32,7 +32,7 @@ void GdbMI::finalize()
   single.reset();
 }
 
-void GdbMI::handle_exec(QTextEvent &qte)
+void GdbMI::handle_exec (QTextEvent &qte)
 {
   // * "star" messages indicate changes in executable running state
 
@@ -41,23 +41,22 @@ void GdbMI::handle_exec(QTextEvent &qte)
   if (i = text.indexOf("stopped", 1); i >= 0) {
     auto paramIdx = text.splitRef(',',QString::SkipEmptyParts);
 
-
   } else if (i = text.indexOf("running", 1); i >= 0) {
 
   }
 }
 
-void GdbMI::handle_notify(QTextEvent &qte)
+void GdbMI::handle_notify (QTextEvent &qte)
 {
 
 }
 
-void GdbMI::handle_status(QTextEvent &qte)
+void GdbMI::handle_status (QTextEvent &qte)
 {
 
 }
 
-void GdbMI::handle_console(QTextEvent &qte)
+void GdbMI::handle_console (QTextEvent &qte)
 {
 
 }

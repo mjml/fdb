@@ -36,6 +36,7 @@ SOURCES += \
         GdbMI.cpp \
         TraceeProcess.cpp \
         fdbapp.cpp \
+        gui/About.cpp \
         gui/QMIDock.cpp \
         gui/QOptionsDock.cpp \
         gui/QTerminalDock.cpp \
@@ -59,10 +60,12 @@ HEADERS += \
         GdbMI.h \
         TraceeProcess.h \
         fdbapp.h \
+        gui/About.h \
         gui/QMIDock.h \
         gui/QOptionsDock.h \
         gui/QTerminalDock.h \
         gui/common.h \
+        gui/gui/About.h \
         io/AsyncPty.h \
         util/GDBProcess.h \
         util/QTextEvent.h
@@ -70,6 +73,7 @@ HEADERS += \
 LIBS += -lutil -lboost_coroutine -lboost_context
 
 FORMS += \
+        gui/about.ui \
         gui/settings.ui \
         mainwindow.ui
 
